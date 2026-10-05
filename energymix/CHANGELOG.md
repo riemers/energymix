@@ -1,5 +1,8 @@
 # Changelog
 
+## 0.1.3
+- Logboek: geen regel meer per dashboard-refresh
+
 ## 0.1.2
 - Fix: verbinding met Home Assistant faalde (`auth_invalid`) omdat s6 de SUPERVISOR_TOKEN wiste
 
