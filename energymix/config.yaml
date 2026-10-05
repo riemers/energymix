@@ -1,0 +1,105 @@
+name: Energymix
+version: "0.1.0"
+slug: energymix
+description: Energieplanner op basis van Tibber-prijzen voor Victron, zonnepanelen en Zappi
+url: https://github.com/riemers/energymix
+arch:
+  - aarch64
+  - amd64
+init: false
+startup: application
+boot: auto
+ingress: true
+ingress_port: 8099
+panel_icon: mdi:lightning-bolt
+panel_title: Energymix
+homeassistant_api: true
+ports:
+  8099/tcp: null
+ports_description:
+  8099/tcp: Web-UI buiten HA (optioneel, bv. als app op je telefoon)
+
+options:
+  tibber_token: ""
+  price_resolution: HOURLY
+  timezone: Europe/Amsterdam
+  mqtt_host: ""
+  mqtt_port: 1883
+  victron_portal_id: ""
+  victron_vebus_instance: "276"
+  carcharger_select_entity: input_select.carcharger
+  vannacht_entity: input_boolean.vannacht
+  battery_soc_entity: sensor.victron_battery_soc
+  solar_today_entity: sensor.energy_production_today
+  sunchance_entity: ""
+  pv_switch_entity: ""
+  zappi_plug_entity: ""
+  zappi_status_entity: ""
+  zappi_mode_entity: ""
+  cars: []
+  battery_capacity_kwh: 47
+  cheap_price: 0.10
+  force_fast_price: 0.15
+  control:
+    pv: false
+    ess: false
+    dvcc: false
+    zappi: false
+    feed_in: false
+
+schema:
+  tibber_token: password
+  price_resolution: list(HOURLY|QUARTER_HOURLY)
+  timezone: str
+  ha_url: url?
+  ha_token: password?
+  mqtt_host: str
+  mqtt_port: port
+  mqtt_username: str?
+  mqtt_password: password?
+  victron_portal_id: str
+  victron_vebus_instance: str
+  carcharger_select_entity: str
+  vannacht_entity: str?
+  battery_soc_entity: str
+  solar_today_entity: str
+  sunchance_entity: str?
+  pv_switch_entity: str?
+  zappi_plug_entity: str?
+  zappi_status_entity: str?
+  zappi_mode_entity: str?
+  cars:
+    - name: str
+      max_range_km: float
+      cable_entity: str
+      location_entity: str
+      range_entity: str
+  has_battery: bool?
+  battery_capacity_kwh: float
+  battery_nominal_voltage: float?
+  charge_efficiency: float(0.5,1)?
+  dvcc_max_charge_current: int?
+  dvcc_min_charge_current: int?
+  cheap_price: float
+  force_fast_price: float
+  solar_skip_grid_charge: bool?
+  solar_skip_grid_charge_buffer: float?
+  lowest_price_ess_minutes: int?
+  lowest_price_ess_soc_below: float?
+  lowest_price_ess_solar_below: float?
+  charge_speed_km_per_hour: float?
+  default_charge_minutes: int?
+  vannacht_ready_hour: int(0,23)?
+  eco_battery_soc_min: float?
+  eco_solar_min: float?
+  eco_sunchance_min: float?
+  eco_morning_start_hour: int(0,23)?
+  eco_morning_end_hour: int(0,24)?
+  interval_minutes: int(5,60)?
+  horizon_hours: int(12,48)?
+  control:
+    pv: bool
+    ess: bool
+    dvcc: bool
+    zappi: bool
+    feed_in: bool

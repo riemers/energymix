@@ -1,0 +1,11 @@
+__pycache__/
+*.pyc
+.pytest_cache/
+.venv/
+*.db
+# Lokale testdata (kan tokens/persoonlijke gegevens bevatten)
+local/
+flows*.json
+node_modules/
+# Wordt in de Dockerfile gebouwd
+energymix/app/energymix/static/
