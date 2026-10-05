@@ -21,6 +21,10 @@ Energymix stuurt pas iets aan als twee dingen allebei aan staan:
 2. **De hoofdschakelaar** `input_boolean.energymix_aansturen` in HA (of "Aansturen" in het dashboard).
    Daarmee zet je alles in één keer stil.
 
+Zet je "Aansturen" uit of stop je de add-on, dan zet Energymix de Victron-onderdelen die live
+stonden eerst terug naar standaard: ESS zelfverbruik, DVCC max, setpoint normaal en alleen critical
+loads. Zo blijft de Victron niet hangen in terugleveren, bewaren of laden van het net.
+
 Advies: begin met `pv`, dan `ess` + `dvcc`, dan `zappi` + `feed_in`, en als laatste `setpoint`.
 
 ## Helpers in Home Assistant

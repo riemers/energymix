@@ -59,6 +59,7 @@ class Engine:
         self._last_sample = 0.0
         self.sources: dict[str, str] = {}
         self._soc_warned = False
+        self._master_seen = False
         self.ha.on_change(self._on_ha_change)
 
     @property
@@ -225,7 +226,12 @@ class Engine:
             await asyncio.sleep(1)
         self.helper_values = helpers.read_helpers(self.ha)
         self.cfg = self.effective(helpers.apply_overrides(self.base_cfg, self.helper_values))
+        was, seen = self.master, self._master_seen
         self.master = self.helper_values.get("master", True)
+        self._master_seen = True
+        if seen and was and not self.master:
+            log.warning("Aansturen uitgezet: Victron terug naar standaardwaarden")
+            await self.executor.restore_defaults("Aansturen uitgezet")
         self.executor.cfg = self.cfg
         self.regulator.cfg = self.cfg
 
@@ -311,6 +317,15 @@ class Engine:
                 await asyncio.sleep(5)  # debounce: meerdere wijzigingen tegelijk
             except asyncio.TimeoutError:
                 pass
+
+    async def shutdown(self) -> None:
+        """Bij stoppen van de add-on: Victron niet in een tijdelijke stand achterlaten."""
+        if self.master and self.cfg.control.any:
+            log.info("Afsluiten: Victron terug naar standaardwaarden")
+            try:
+                await asyncio.wait_for(self.executor.restore_defaults("add-on gestopt"), 10)
+            except Exception as e:  # noqa: BLE001
+                log.error("Standaardwaarden terugzetten mislukt: %s", e)
 
     async def _fast_loop(self) -> None:
         while True:

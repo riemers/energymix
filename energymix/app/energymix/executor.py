@@ -90,6 +90,29 @@ class Executor:
             log.info("%s %s -> %s (%s)", "LIVE" if a.live else "SHADOW", a.component, a.desired, a.reason)
         self._last_desired[a.component] = a.desired
 
+    async def restore_defaults(self, why: str) -> list[Action]:
+        """Zet de Victron terug naar veilige standaardwaarden (alleen onderdelen die live mochten).
+
+        Gebruikt bij het uitzetten van "Aansturen" en bij stoppen van de add-on, zodat
+        de Victron niet blijft terugleveren, bewaren of van het net laden.
+        """
+        c = self.cfg
+        defaults = {
+            "ess": 10,  # zelfverbruik
+            "dvcc": c.dvcc_max_charge_current,
+            "setpoint": int(c.grid_setpoint_default_w),
+            "feed_in": 1,  # alleen critical loads
+        }
+        done = []
+        for comp, value in defaults.items():
+            if not getattr(c.control, comp, False):
+                continue
+            a = Action(comp, value, self._written(comp), f"standaardwaarde terug: {why}", True)
+            self._last_written.pop(comp, None)  # altijd schrijven
+            await self._run(a)
+            done.append(a)
+        return done
+
     def _written(self, kind: str):
         v = self._last_written.get(kind)
         return v[0] if v else None

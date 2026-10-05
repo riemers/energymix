@@ -92,3 +92,44 @@ def test_supervisor_token_from_s6_env(tmp_path, monkeypatch):
     assert ha_mod.supervisor_token() == "abc"
     monkeypatch.setenv("SUPERVISOR_TOKEN", "env")
     assert ha_mod.supervisor_token() == "env"
+
+
+async def test_restore_defaults_only_for_live_components(tmp_path):
+    class FakeVictron:
+        configured = True
+
+        def __init__(self):
+            self.writes = []
+
+        async def write(self, kind, value):
+            self.writes.append((kind, value))
+
+    v = FakeVictron()
+    cfg = Config(control=Control(ess=True, setpoint=True, dvcc=False), grid_setpoint_default_w=50)
+    ex = Executor(cfg, None, v, Store(tmp_path / "t.db"))
+    ex._last_written["setpoint"] = (-4000, 0)  # was aan het terugleveren
+    await ex.restore_defaults("test")
+    assert sorted(v.writes) == [("ess", 10), ("setpoint", 50)]  # dvcc niet live: niet aanraken
+
+
+async def test_master_off_restores_once(tmp_path):
+    from energymix.engine import Engine
+
+    e = Engine(Config(control=Control(ess=True)), None, Store(tmp_path / "t.db"))
+    calls = []
+
+    async def fake_restore(why):
+        calls.append(why)
+
+    e.executor.restore_defaults = fake_restore
+    e.ha.connected.set()
+    e.base_cfg.create_helpers = False
+    master = "input_boolean.energymix_aansturen"
+    e.ha.states = {master: {"state": "off"}}
+    await e._helpers()  # eerste keer uit: niets terugzetten (was al uit)
+    assert calls == []
+    e.ha.states[master]["state"] = "on"
+    await e._helpers()
+    e.ha.states[master]["state"] = "off"
+    await e._helpers()
+    assert calls == ["Aansturen uitgezet"]

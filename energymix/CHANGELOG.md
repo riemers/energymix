@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.2.10
+- Veiligheid: bij uitzetten van "Aansturen" en bij stoppen/herstarten van de add-on worden de
+  Victron-instellingen die live stonden teruggezet naar standaard (ESS zelfverbruik, DVCC max,
+  setpoint normaal, critical loads). Zo blijft de Victron nooit hangen in terugleveren,
+  bewaren of laden van het net
+
 ## 0.2.9
 - Fix: Zappi pendelde tussen Fast en Eco+ (losse goedkope kwartieren, zoals 9 minuten in het
   lopende kwartier). De auto laadt nu in één aaneengesloten goedkoopste blok, zoals in Node-RED
