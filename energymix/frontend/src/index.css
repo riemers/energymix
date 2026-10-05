@@ -2,24 +2,75 @@
 
 @theme {
   --font-sans: "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
-  --color-ink-950: #0b0f17;
-  --color-ink-900: #111723;
-  --color-ink-800: #18202f;
-  --color-ink-700: #243044;
+  --color-ink-950: #080b12;
+  --color-ink-900: #0f141f;
+  --color-ink-800: #161d2b;
+  --color-ink-700: #222c3f;
   --color-neg: #facc15;
   --color-cheap: #34d399;
   --color-mid: #60a5fa;
   --color-high: #f87171;
+  --color-sun: #fbbf24;
+  --color-grid: #94a3b8;
+  --color-batt: #34d399;
+  --color-car: #f472b6;
+  --color-house: #38bdf8;
 }
 
 html,
 body {
-  background: var(--color-ink-950);
+  background:
+    radial-gradient(1200px 600px at 10% -10%, rgba(52, 211, 153, 0.07), transparent 60%),
+    radial-gradient(900px 500px at 100% 0%, rgba(56, 189, 248, 0.06), transparent 60%),
+    var(--color-ink-950);
+  background-attachment: fixed;
   color: #e5e7eb;
   font-feature-settings: "tnum";
   -webkit-font-smoothing: antialiased;
+  min-height: 100%;
 }
 
 .card {
-  @apply rounded-2xl border border-white/5 bg-ink-900/80 p-4 shadow-xl shadow-black/20 backdrop-blur;
+  @apply rounded-2xl border border-white/[0.06] bg-ink-900/70 p-4 shadow-xl shadow-black/30 backdrop-blur-md;
+}
+
+/* Bewegende stroomlijnen in het flow-diagram */
+@keyframes flow {
+  to {
+    stroke-dashoffset: -24;
+  }
+}
+.flow-line {
+  stroke-dasharray: 4 8;
+  animation: flow linear infinite;
+}
+
+.range {
+  -webkit-appearance: none;
+  appearance: none;
+  height: 6px;
+  border-radius: 999px;
+  background: linear-gradient(to right, var(--accent) var(--pct), rgba(255, 255, 255, 0.08) var(--pct));
+  outline: none;
+}
+.range::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 1px 6px rgba(0, 0, 0, 0.4);
+  cursor: pointer;
+}
+.range::-moz-range-thumb {
+  width: 18px;
+  height: 18px;
+  border: 0;
+  border-radius: 50%;
+  background: #fff;
+  cursor: pointer;
+}
+
+input[type="time"]::-webkit-calendar-picker-indicator {
+  filter: invert(0.8);
 }

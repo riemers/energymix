@@ -18,6 +18,7 @@ class PriceSlot:
     end: datetime
     price: float  # €/kWh incl. belastingen (Tibber `total`)
     level: str | None = None
+    energy: float | None = None  # kale energieprijs (Tibber `energy`)
 
     @property
     def minutes(self) -> float:
@@ -34,29 +35,31 @@ def parse_tibber(price_info: dict[str, Any]) -> list[PriceSlot]:
     krijgt dezelfde lengte als het slot ervoor (of 60 min als er maar één is).
     """
     raw = [*(price_info.get("today") or []), *(price_info.get("tomorrow") or [])]
-    points: list[tuple[datetime, float, str | None]] = []
+    points: list[tuple] = []
     for p in raw:
         try:
             start = datetime.fromisoformat(p["startsAt"])
             price = float(p["total"])
         except (KeyError, TypeError, ValueError):
             continue
-        points.append((start, price, p.get("level")))
+        energy = p.get("energy")
+        points.append((start, price, p.get("level"), float(energy) if energy is not None else None))
     points.sort(key=lambda x: x[0])
     return build_slots(points)
 
 
-def build_slots(points: Iterable[tuple[datetime, float, str | None]]) -> list[PriceSlot]:
+def build_slots(points: Iterable[tuple]) -> list[PriceSlot]:
+    """Punten zijn (start, prijs, level) of (start, prijs, level, energieprijs)."""
     pts = list(points)
     slots: list[PriceSlot] = []
-    for i, (start, price, level) in enumerate(pts):
+    for i, (start, price, level, *rest) in enumerate(pts):
         if i + 1 < len(pts):
             end = pts[i + 1][0]
         elif i > 0:
             end = start + (start - pts[i - 1][0])
         else:
             end = start + timedelta(hours=1)
-        slots.append(PriceSlot(start, end, price, level))
+        slots.append(PriceSlot(start, end, price, level, rest[0] if rest else None))
     return slots
 
 

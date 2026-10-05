@@ -42,37 +42,53 @@ class Executor:
         self._last_written: dict[str, tuple[object, float]] = {}
         self.last_actions: list[Action] = []
 
-    async def apply(self, sp: SlotPlan) -> list[Action]:
-        c, ctl, r = self.cfg, self.cfg.control, sp.reasons
+    def live(self, component: str, master: bool = True) -> bool:
+        return master and getattr(self.cfg.control, component, False)
+
+    def actions_for(self, sp: SlotPlan, master: bool = True, dvcc: tuple[int | None, str] | None = None) -> list[Action]:
+        c, r = self.cfg, sp.reasons
         actions: list[Action] = []
-
         if sp.pv_on is not None:
-            actual = self.ha.state(c.pv_switch_entity)
             desired = "on" if sp.pv_on else "off"
-            actions.append(Action("pv", desired, actual, r.get("pv", ""), ctl.pv))
+            actions.append(Action("pv", desired, self.ha.state(c.pv_switch_entity), r.get("pv", ""), self.live("pv", master)))
         if sp.zappi_mode is not None:
-            actions.append(Action("zappi", sp.zappi_mode, self.ha.state(c.zappi_mode_entity), r.get("zappi", ""), ctl.zappi))
+            actions.append(Action("zappi", sp.zappi_mode, self.ha.state(c.zappi_mode_entity), r.get("zappi", ""), self.live("zappi", master)))
         if sp.ess_state is not None:
-            actions.append(Action("ess", sp.ess_state, self._written("ess"), r.get("ess", ""), ctl.ess))
+            actions.append(Action("ess", sp.ess_state, self._written("ess"), r.get("ess", ""), self.live("ess", master)))
         if sp.dvcc_current is not None:
-            actions.append(Action("dvcc", sp.dvcc_current, self._written("dvcc"), r.get("dvcc", ""), ctl.dvcc))
+            value, why = dvcc if dvcc and dvcc[0] is not None else (sp.dvcc_current, r.get("dvcc", ""))
+            actions.append(Action("dvcc", value, self._written("dvcc"), why, self.live("dvcc", master)))
+        if sp.setpoint_w is not None:
+            actions.append(Action("setpoint", sp.setpoint_w, self._written("setpoint"), r.get("setpoint", ""), self.live("setpoint", master)))
         if sp.feed_in_disabled is not None:
-            actions.append(Action("feed_in", sp.feed_in_disabled, self._written("feed_in"), r.get("feed_in", ""), ctl.feed_in))
+            actions.append(Action("feed_in", sp.feed_in_disabled, self._written("feed_in"), r.get("feed_in", ""), self.live("feed_in", master)))
+        return actions
 
+    async def apply(self, sp: SlotPlan, master: bool = True, dvcc: tuple[int | None, str] | None = None) -> list[Action]:
+        actions = self.actions_for(sp, master, dvcc)
         for a in actions:
-            if a.live:
-                try:
-                    a.executed = await self._execute(a)
-                except Exception as e:  # noqa: BLE001
-                    a.error = str(e)
-                    log.error("Uitvoeren %s mislukt: %s", a.component, e)
-            if self._last_desired.get(a.component) != a.desired or a.executed:
-                self.store.log_decision(a.component, a.desired, a.actual, a.reason, a.executed)
-                log.info("%s %s -> %s (%s)", "LIVE" if a.live else "SHADOW", a.component, a.desired, a.reason)
-            self._last_desired[a.component] = a.desired
-
+            await self._run(a)
         self.last_actions = actions
         return actions
+
+    async def apply_dvcc(self, value: int, reason: str, master: bool = True) -> Action:
+        """Tussentijdse DVCC-aanpassing door de regelaar."""
+        a = Action("dvcc", value, self._written("dvcc"), reason, self.live("dvcc", master))
+        await self._run(a)
+        self.last_actions = [x for x in self.last_actions if x.component != "dvcc"] + [a]
+        return a
+
+    async def _run(self, a: Action) -> None:
+        if a.live:
+            try:
+                a.executed = await self._execute(a)
+            except Exception as e:  # noqa: BLE001
+                a.error = str(e)
+                log.error("Uitvoeren %s mislukt: %s", a.component, e)
+        if self._last_desired.get(a.component) != a.desired or a.executed:
+            self.store.log_decision(a.component, a.desired, a.actual, a.reason, a.executed)
+            log.info("%s %s -> %s (%s)", "LIVE" if a.live else "SHADOW", a.component, a.desired, a.reason)
+        self._last_desired[a.component] = a.desired
 
     def _written(self, kind: str):
         v = self._last_written.get(kind)

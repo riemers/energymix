@@ -13,8 +13,8 @@ URL = "https://api.tibber.com/v1-beta/gql"
 QUERY = """
 query ($res: PriceInfoResolution) {
   viewer { homes { currentSubscription { priceInfo(resolution: $res) {
-    today { total startsAt level }
-    tomorrow { total startsAt level }
+    today { total energy startsAt level }
+    tomorrow { total energy startsAt level }
   } } } }
 }
 """

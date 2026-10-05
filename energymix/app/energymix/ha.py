@@ -36,6 +36,7 @@ def supervisor_token() -> str:
 class HomeAssistant:
     def __init__(self, session: aiohttp.ClientSession, url: str = "", token: str = ""):
         self._session = session
+        self.rest_url = (url.rstrip("/") + "/api") if url else "http://supervisor/core/api"
         self.url = (url.rstrip("/") + "/api/websocket") if url else "http://supervisor/core/websocket"
         self.url = self.url.replace("https://", "wss://").replace("http://", "ws://")
         self.token = token or (supervisor_token() if not url else "")
@@ -55,6 +56,15 @@ class HomeAssistant:
         if not entity_id:
             return ""
         return str((self.states.get(entity_id) or {}).get("state", ""))
+
+    def attributes(self, entity_id: str) -> dict[str, Any]:
+        return dict((self.states.get(entity_id) or {}).get("attributes") or {})
+
+    def number(self, entity_id: str) -> float | None:
+        try:
+            return float(self.state(entity_id)) if entity_id else None
+        except ValueError:
+            return None
 
     async def run(self) -> None:
         backoff = 2
@@ -143,3 +153,18 @@ class HomeAssistant:
                 "service_data": data or {},
             }
         )
+
+    async def command(self, payload: dict) -> Any:
+        """Willekeurig websocket-commando (bv. input_boolean/create)."""
+        return await self._call(payload)
+
+    async def set_state(self, entity_id: str, state: Any, attributes: dict | None = None) -> None:
+        """Zet een (virtuele) sensor in HA via de REST API."""
+        async with self._session.post(
+            f"{self.rest_url}/states/{entity_id}",
+            json={"state": state, "attributes": attributes or {}},
+            headers={"Authorization": f"Bearer {self.token}"},
+            timeout=aiohttp.ClientTimeout(total=10),
+        ) as resp:
+            if resp.status >= 400:
+                raise RuntimeError(f"set_state {entity_id}: HTTP {resp.status}")
