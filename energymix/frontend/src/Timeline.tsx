@@ -81,7 +81,25 @@ export default function Timeline({ plan, tz, cheap, fast, target, reserve }: Pro
     const h = (Date.parse(s.end) - Date.parse(s.start)) / 3600_000;
     return [x((Date.parse(s.start) + Date.parse(s.end)) / 2), CHART_H - 10 - (s.pv_kwh / h / pvMaxKw) * (CHART_H * 0.45)] as const;
   });
-  const pvArea = pvPts.length
+  // Zonlijn alleen waar er zon is (geen gele streep over de bodem 's nachts)
+  const pvKw = slots.map((s) => s.pv_kwh / hoursOf(s));
+  let pvLine = "";
+  let prevOn = false;
+  pvPts.forEach((p, i) => {
+    const on = pvKw[i] > 0.05 || (pvKw[i - 1] ?? 0) > 0.05 || (pvKw[i + 1] ?? 0) > 0.05;
+    if (on) pvLine += `${prevOn ? "L" : "M"}${p[0].toFixed(1)},${p[1].toFixed(1)} `;
+    prevOn = on;
+  });
+  // Piek per dag
+  const peaks: { x: number; y: number; kw: number }[] = [];
+  const byDay = new Map<string, number>();
+  slots.forEach((s, i) => {
+    const d = new Date(s.start).toLocaleDateString("nl-NL", { timeZone: tz });
+    const b = byDay.get(d);
+    if (b === undefined || pvKw[i] > pvKw[b]) byDay.set(d, i);
+  });
+  byDay.forEach((i) => pvKw[i] > 0.2 && peaks.push({ x: pvPts[i][0], y: pvPts[i][1], kw: pvKw[i] }));
+  const pvArea = pvPts.length && pvLine
     ? `M${x(t0)},${CHART_H - 10} ` + pvPts.map((p) => `L${p[0].toFixed(1)},${p[1].toFixed(1)}`).join(" ") + ` L${x(t1)},${CHART_H - 10} Z`
     : "";
 
@@ -99,8 +117,8 @@ export default function Timeline({ plan, tz, cheap, fast, target, reserve }: Pro
       <svg width={width} height={totalH} className="block touch-none" onPointerMove={onMove} onPointerLeave={() => setHover(null)}>
         <defs>
           <linearGradient id="pvfill" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0" stopColor="#fbbf24" stopOpacity="0.28" />
-            <stop offset="1" stopColor="#fbbf24" stopOpacity="0.02" />
+            <stop offset="0" stopColor="#fde047" stopOpacity="0.30" />
+            <stop offset="1" stopColor="#fde047" stopOpacity="0.04" />
           </linearGradient>
         </defs>
 
@@ -120,8 +138,6 @@ export default function Timeline({ plan, tz, cheap, fast, target, reserve }: Pro
         {target !== undefined && <line x1={PAD_L} x2={width - PAD_R} y1={ySoc(target)} y2={ySoc(target)} stroke="#34d399" strokeOpacity={0.25} strokeDasharray="6 6" />}
         {reserve !== undefined && <line x1={PAD_L} x2={width - PAD_R} y1={ySoc(reserve)} y2={ySoc(reserve)} stroke="#fbbf24" strokeOpacity={0.25} strokeDasharray="6 6" />}
 
-        {pvArea && <path d={pvArea} fill="url(#pvfill)" />}
-
         {slots.map((s, i) => {
           const xs = x(Date.parse(s.start));
           const w = Math.max(1, x(Date.parse(s.end)) - xs - (width > 600 ? 1.2 : 0.4));
@@ -129,6 +145,18 @@ export default function Timeline({ plan, tz, cheap, fast, target, reserve }: Pro
           const hgt = Math.max(1.5, Math.abs(y(s.price) - y(0)));
           return <rect key={s.start} x={xs} y={top} width={w} height={hgt} rx={Math.min(2.5, w / 3)} fill={slotColor(s.price, s.level, cheap, fast)} opacity={hover === null || hover === i ? 0.85 : 0.35} />;
         })}
+
+        {/* Zon over de prijsbalken heen: lichte vulling + duidelijke rand, met de piek erbij */}
+        {pvArea && <path d={pvArea} fill="url(#pvfill)" style={{ mixBlendMode: "screen" }} />}
+        {pvLine && <path d={pvLine} fill="none" stroke="#fde047" strokeWidth={1.6} strokeOpacity={0.9} strokeLinejoin="round" style={{ filter: "drop-shadow(0 0 3px rgba(253,224,71,.55))" }} />}
+        {peaks.map((pk) => (
+          <g key={pk.x}>
+            <circle cx={pk.x} cy={pk.y} r={2.5} fill="#fde047" />
+            <text x={pk.x} y={pk.y - 7} textAnchor="middle" className="fill-yellow-200 text-[10px] font-medium">
+              ☀ {pk.kw.toFixed(1).replace(".", ",")} kW
+            </text>
+          </g>
+        ))}
 
         {socLine && <path d={socLine} fill="none" stroke="#34d399" strokeWidth={2.2} strokeLinejoin="round" style={{ filter: "drop-shadow(0 0 3px rgba(52,211,153,.6))" }} />}
 
@@ -261,6 +289,7 @@ function Legend() {
     ["var(--color-neg)", "negatief", "box"],
     ...Object.values(LEVELS).map((l) => [l.color, l.label, "box"] as [string, string, "box"]),
     ["#34d399", "accu verwacht", "line"],
+    ["#fde047", "zon verwacht", "line"],
     [CAR_COLOR.Fast, "auto Fast", "box"],
     [CAR_COLOR.Eco, "auto Eco", "box"],
     [BATT_COLOR.charge, "accu laden", "box"],
@@ -287,4 +316,8 @@ function niceTicks(min: number, max: number): number[] {
   for (let p = Math.ceil(min / step) * step; p <= max; p += step) out.push(Math.round(p * 100) / 100);
   if (!out.includes(0)) out.push(0);
   return out;
+}
+
+function hoursOf(s: { start: string; end: string }): number {
+  return Math.max(1e-6, (Date.parse(s.end) - Date.parse(s.start)) / 3600_000);
 }
