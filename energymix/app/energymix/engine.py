@@ -13,6 +13,7 @@ import aiohttp
 
 from . import helpers
 from .config import Config
+from .discovery import suggest
 from .executor import Executor
 from .forecast import house_per_slot, pv_per_slot
 from .ha import HomeAssistant
@@ -132,10 +133,11 @@ class Engine:
             st.battery_w = self.victron.battery_w()
             self.sources["battery_w"] = "Victron MQTT"
         # Accuniveau: de GX zelf gaat voor (dat is wat VRM/het display toont); HA-sensor als terugval
-        if self.victron.soc() is not None:
+        v_soc = self.victron.soc(c.battery_soc_source)
+        if v_soc is not None:
             ha_soc = st.soc
-            st.soc = self.victron.soc()
-            self.sources["soc"] = "Victron MQTT"
+            st.soc = v_soc
+            self.sources["soc"] = "Victron MQTT" + ("" if c.battery_soc_source == "system" else f" ({c.battery_soc_source})")
             if ha_soc is not None and abs(ha_soc - st.soc) >= 5 and not self._soc_warned:
                 self._soc_warned = True
                 log.warning(
@@ -144,9 +146,26 @@ class Engine:
                 )
         elif st.soc is not None:
             self.sources["soc"] = "HA"
+        # Zonnepanelen: de Envoy is leidend; de Victron PV-omvormer alleen als reserve
+        # (die valt soms weg). Geen entity ingesteld: zoek de Envoy-sensor zelf op.
+        pv_eid = c.pv_power_entity or suggest(self.ha.states, "pv_power_entity") or ""
+        if pv_eid and st.pv_w is None:
+            st.pv_w = self._watts(pv_eid)
+        if st.pv_w is not None:
+            self.sources["pv_w"] = "Envoy" + ("" if c.pv_power_entity else f" (gevonden: {pv_eid})")
+        elif self.victron.pv_w() is not None:
+            st.pv_w = self.victron.pv_w()
+            self.sources["pv_w"] = "Victron PV-omvormer (Envoy niet beschikbaar)"
         if st.house_w is None and st.grid_w is not None:
             st.house_w = (st.pv_w or 0) + st.grid_w - (st.battery_w or 0) - (st.zappi_w or 0)
         return st
+
+    def _watts(self, eid: str) -> float | None:
+        val = self.ha.number(eid)
+        if val is None:
+            return None
+        unit = str(self.ha.attributes(eid).get("unit_of_measurement", "")).lower()
+        return val * 1000 if unit == "kw" else val
 
     def _phase_current(self, eid: str) -> float | None:
         val = self.ha.number(eid)

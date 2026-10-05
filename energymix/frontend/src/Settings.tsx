@@ -101,7 +101,9 @@ function FieldRow({ f, value, onChange }: { f: SettingField; value: string | num
   return (
     <div>
       <label className="mb-1 block text-xs text-slate-400">{f.label}</label>
-      {f.kind === "entity" ? (
+      {f.kind === "battery" ? (
+        <BatteryChoice f={f} value={String(value)} onChange={onChange} />
+      ) : f.kind === "entity" ? (
         <>
           <EntityPicker value={String(value ?? "")} current={f} onChange={onChange} />
           {!value && f.suggestion && (
@@ -222,4 +224,37 @@ function EntityPicker({ value, current, onChange }: { value: string; current: Se
 function fmtAge(s: number): string {
   const h = s / 3600;
   return h < 48 ? `${Math.round(h)} uur` : `${Math.round(h / 24)} dagen`;
+}
+
+function BatteryChoice({ f, value, onChange }: { f: SettingField; value: string; onChange: (v: string) => void }) {
+  const opts = f.options ?? [];
+  if (opts.length <= 1 && opts[0]?.soc === null) {
+    return <p className="text-[11px] text-slate-500">Nog geen gegevens van de Victron GX (MQTT). Standaard: de actieve monitor.</p>;
+  }
+  return (
+    <div className="space-y-1.5">
+      {opts.map((o) => {
+        const selected = value === o.source;
+        return (
+          <button key={o.source} type="button" onClick={() => onChange(o.source)}
+            className={`flex w-full items-center gap-3 rounded-lg border px-3 py-2 text-left transition ${
+              selected ? "border-emerald-400/50 bg-emerald-400/[0.07]" : "border-white/10 bg-white/[0.03] hover:bg-white/5"
+            }`}>
+            <span className={`h-3.5 w-3.5 shrink-0 rounded-full border-2 ${selected ? "border-emerald-400 bg-emerald-400" : "border-slate-500"}`} />
+            <span className="min-w-0 flex-1">
+              <span className="block truncate text-sm text-slate-200">
+                {o.name}
+                {o.active && <span className="ml-2 rounded bg-sky-400/10 px-1.5 py-0.5 text-[10px] text-sky-300">actief in GX</span>}
+              </span>
+              <span className="block text-[11px] text-slate-500">{o.source === "system" ? "volgt de keuze in de GX" : o.source}</span>
+            </span>
+            <span className="shrink-0 text-right">
+              <span className="block text-sm font-semibold tabular-nums">{o.soc !== null ? `${o.soc.toFixed(1)}%` : "–"}</span>
+              {o.power_w !== null && <span className="block text-[11px] text-slate-500">{Math.round(o.power_w)} W</span>}
+            </span>
+          </button>
+        );
+      })}
+    </div>
+  );
 }

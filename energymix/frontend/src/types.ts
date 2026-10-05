@@ -180,6 +180,7 @@ export interface SettingField {
   suggestion: { entity_id: string; state: string; unit: string | null } | null;
   fallback: { label: string; active: boolean } | null;
   age_s: number | null;
+  options: { source: string; name: string; soc: number | null; power_w: number | null; active: boolean }[] | null;
 }
 
 export interface Settings {

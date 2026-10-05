@@ -27,6 +27,7 @@ class Victron:
         self.portal_id, self.vebus = portal_id, vebus
         self.username, self.password = username or None, password or None
         self.values: dict[str, tuple[float, float]] = {}  # pad -> (waarde, tijd)
+        self.texts: dict[str, str] = {}  # pad -> tekst (namen, actieve accu-service)
         self.connected = False
 
     @property
@@ -54,7 +55,15 @@ class Victron:
             f"N/{p}/system/0/Ac/Grid/+/Power",
             f"N/{p}/system/0/Dc/Battery/Power",
             f"N/{p}/system/0/Dc/Battery/Soc",
+            f"N/{p}/system/0/ActiveBatteryService",
+            f"N/{p}/system/0/Ac/PvOnGrid/+/Power",
+            f"N/{p}/system/0/Ac/PvOnOutput/+/Power",
             f"N/{p}/vebus/{self.vebus}/Ac/NumberOfPhases",
+            # Alle accu's/monitoren die de GX kent (Lynx Shunt, BMS, ...)
+            f"N/{p}/battery/+/Soc",
+            f"N/{p}/battery/+/Dc/0/Power",
+            f"N/{p}/battery/+/ProductName",
+            f"N/{p}/battery/+/CustomName",
         ]
 
     def handle(self, topic: str, payload: bytes, now: float | None = None) -> None:
@@ -65,8 +74,13 @@ class Victron:
             val = json.loads(payload).get("value")
         except (ValueError, AttributeError):
             return
+        path = topic[len(prefix):]
+        if isinstance(val, bool):
+            return
         if isinstance(val, (int, float)):
-            self.values[topic[len(prefix):]] = (float(val), now if now is not None else time.time())
+            self.values[path] = (float(val), now if now is not None else time.time())
+        elif isinstance(val, str):
+            self.texts[path] = val
 
     def get(self, path: str, now: float | None = None) -> float | None:
         v = self.values.get(path)
@@ -80,8 +94,30 @@ class Victron:
     def battery_w(self) -> float | None:
         return self.get("system/0/Dc/Battery/Power")  # Victron: positief = laden
 
-    def soc(self) -> float | None:
+    def soc(self, source: str = "system") -> float | None:
+        """SoC van de actieve accumonitor ("system") of van een specifieke ("battery/512")."""
+        if source and source != "system":
+            return self.get(f"{source}/Soc")
         return self.get("system/0/Dc/Battery/Soc")
+
+    def pv_w(self) -> float | None:
+        vals = [self.get(f"system/0/Ac/{k}/L{i}/Power") for k in ("PvOnGrid", "PvOnOutput") for i in (1, 2, 3)]
+        vals = [v for v in vals if v is not None]
+        return sum(vals) if vals else None
+
+    def batteries(self) -> list[dict]:
+        """Alle accu-services die de GX meldt, met naam, SoC en of het de actieve monitor is."""
+        active = self.texts.get("system/0/ActiveBatteryService", "")  # bv. "com.victronenergy.battery/512"
+        insts = sorted({p.split("/")[1] for p in [*self.values, *self.texts] if p.startswith("battery/")})
+        out = []
+        for inst in insts:
+            key = f"battery/{inst}"
+            name = self.texts.get(f"{key}/CustomName") or self.texts.get(f"{key}/ProductName") or f"Accu {inst}"
+            out.append({
+                "source": key, "name": name, "soc": self.get(f"{key}/Soc"),
+                "power_w": self.get(f"{key}/Dc/0/Power"), "active": active.endswith(f"battery/{inst}"),
+            })
+        return out
 
     def vebus_phases(self) -> int | None:
         v = self.values.get(f"vebus/{self.vebus}/Ac/NumberOfPhases")
