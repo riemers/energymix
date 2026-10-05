@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.2.22
+- Zon in de planningsgrafiek beter zichtbaar: gele lijn met gloed bovenop de prijsbalken, lichte
+  vulling, de piek per dag erbij (☀ 4,4 kW) en "zon verwacht" in de legenda
+
 ## 0.2.21
 - "Accu bewaren" is nu een schakelaar, standaard uit (`input_boolean.energymix_accu_bewaren`)
 - Bij de schakelaar staat wat bewaren in de huidige planning zou schelen, en wanneer: aan of uit, hij
