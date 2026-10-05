@@ -125,6 +125,7 @@ class SlotPlan:
     grid_charge_kwh: float = 0.0
     export_kwh: float = 0.0
     import_kwh: float = 0.0
+    car_range_km: float | None = None  # verwachte actieradius aan het eind van het slot
     reasons: dict[str, str] = field(default_factory=dict)
 
     def to_dict(self) -> dict:
@@ -143,6 +144,9 @@ class CarPlan:
     planned_kwh: float = 0.0
     deadline: datetime | None = None
     full_at: datetime | None = None
+    max_range_km: float | None = None
+    kwh_per_km: float = 0.17
+    sessions: list[dict] = field(default_factory=list)
 
     def to_dict(self) -> dict:
         d = asdict(self)
@@ -159,6 +163,7 @@ class Plan:
     season: dict
     summary: dict = field(default_factory=dict)
     notes: list[str] = field(default_factory=list)
+    battery_sessions: list[dict] = field(default_factory=list)
 
     @property
     def now(self) -> SlotPlan | None:
@@ -183,6 +188,8 @@ class Plan:
             "season": self.season,
             "summary": self.summary,
             "notes": self.notes,
+            "car_sessions": self.car.sessions,
+            "battery_sessions": self.battery_sessions,
             "slots": [s.to_dict() for s in self.slots],
         }
 
@@ -316,7 +323,82 @@ def make_plan(
     # Nederlandse notatie in de redenen: €0,162 i.p.v. €0.162
     for sp in plans:
         sp.reasons = {k: _nl(v) for k, v in sp.reasons.items()}
-    return Plan(now, plans, car, season, summary, [_nl(n) for n in notes])
+    car.sessions = _car_sessions(plans, car, state)
+    return Plan(now, plans, car, season, summary, [_nl(n) for n in notes], _battery_sessions(plans))
+
+
+ECO_KW = 3.7  # geschat laadvermogen op Eco (zon/accu)
+
+
+def _car_sessions(plans: list[SlotPlan], car: CarPlan, state: State) -> list[dict]:
+    """Laadsessies van de auto: aaneengesloten slots met dezelfde Zappi-modus."""
+    if not state.car_plugged:
+        return []
+    km = car.range_km
+    out: list[dict] = []
+    cur: dict | None = None
+    for sp in plans:
+        mode = sp.zappi_mode if sp.zappi_mode in ("Fast", "Eco") else None
+        kwh = sp.car_kwh if mode == "Fast" else (ECO_KW * _hours(sp) if mode == "Eco" else 0.0)
+        km_before = km
+        if km is not None and car.max_range_km:
+            room = max(0.0, car.max_range_km - km) * car.kwh_per_km
+            kwh = min(kwh, room)
+            km = min(car.max_range_km, km + kwh / car.kwh_per_km)
+            sp.car_range_km = round(km)
+        if mode and kwh > EPS:
+            why = sp.reasons.get("zappi", "")
+            kind = (
+                "minimum" if why.startswith(("onder ", "vannacht")) else
+                "bijladen" if "goedkoop bijladen" in why else
+                "eco" if mode == "Eco" else
+                "direct" if "direct laden" in why else "handmatig"
+            )
+            if cur and cur["mode"] == mode and cur["end"] == sp.start.isoformat():
+                cur["end"] = sp.end.isoformat()
+                cur["kwh"] += kwh
+                cur["cost"] += kwh * sp.price
+                if kind not in cur["kinds"]:
+                    cur["kinds"].append(kind)
+            else:
+                cur = {"mode": mode, "kinds": [kind], "start": sp.start.isoformat(), "end": sp.end.isoformat(),
+                       "kwh": kwh, "cost": kwh * sp.price,
+                       "range_start_km": round(km_before) if km_before is not None else None, "reason": why}
+                out.append(cur)
+            cur["range_end_km"] = sp.car_range_km
+    for c in out:
+        c["kwh"] = round(c["kwh"], 1)
+        c["avg_price"] = round(c["cost"] / c["kwh"], 4) if c["kwh"] else None
+        c["cost"] = round(c["cost"], 2)
+    return out
+
+
+def _battery_sessions(plans: list[SlotPlan]) -> list[dict]:
+    """Accu-acties als blokken: laden van het net, bewaren, terugleveren."""
+    out: list[dict] = []
+    cur: dict | None = None
+    for sp in plans:
+        if sp.setpoint_w is not None and sp.setpoint_w < 0:
+            kind = "export"
+        elif sp.ess_state == ESS_KEEP_CHARGED and sp.dvcc_current == 0:
+            kind = "hold"
+        elif sp.ess_state == ESS_KEEP_CHARGED:
+            kind = "charge"
+        else:
+            cur = None
+            continue
+        if cur and cur["kind"] == kind and cur["end"] == sp.start.isoformat():
+            cur["end"] = sp.end.isoformat()
+            cur["kwh"] += sp.export_kwh if kind == "export" else sp.grid_charge_kwh
+            cur["soc_end"] = sp.soc
+        else:
+            cur = {"kind": kind, "start": sp.start.isoformat(), "end": sp.end.isoformat(),
+                   "kwh": sp.export_kwh if kind == "export" else sp.grid_charge_kwh, "soc_end": sp.soc,
+                   "reason": sp.reasons.get("setpoint" if kind == "export" else "ess", "")}
+            out.append(cur)
+    for b in out:
+        b["kwh"] = round(b["kwh"], 1)
+    return out
 
 
 _EUR_RE = re.compile(r"(€-?\d+)\.(\d+)")
@@ -378,6 +460,7 @@ def _plan_car(cfg, tz, now, slots, plans, state: State, notes) -> CarPlan:
         rng = active.range_value or 0.0
         cp.name, cp.range_km = active.name, rng
         kpk = active.kwh_per_km or 0.17
+        cp.max_range_km, cp.kwh_per_km = active.max_range_km, kpk
         cp.need_full_kwh = max(0.0, active.max_range_km - rng) * kpk
         min_km = min(cfg.car_min_range_km, active.max_range_km)
         cp.need_min_kwh = max(0.0, min_km - rng) * kpk

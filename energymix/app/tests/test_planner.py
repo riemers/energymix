@@ -229,3 +229,14 @@ def test_quarter_hour_prices():
     assert w[0].start == at(2) and w[-1].end == at(2, 30)
     plan = make_plan(cfg(), slots, State(soc=50), at(1))
     assert len(plan.slots) == 92
+
+
+def test_car_sessions_show_when_and_how_far():
+    prices = hourly(at(0), [0.30] * 10 + [0.12] * 2 + [0.30] * 12)
+    st = State(zappi_plug="EV Connected", carcharger_mode="auto", cars=car("300"))
+    plan = make_plan(cfg(force_fast_price=0.0, car_opportunistic_price=0.15), prices, st, at(8))
+    [sess] = plan.car.sessions
+    assert sess["mode"] == "Fast" and sess["kinds"] == ["bijladen"]
+    assert sess["start"] == at(10).isoformat() and sess["end"] == at(12).isoformat()
+    # 100 km tekort * 0.2 = 20 kWh, 2 uur x 11 kW = 22 kWh -> vol
+    assert sess["range_start_km"] == 300 and sess["range_end_km"] == 400 and sess["kwh"] == 20.0
