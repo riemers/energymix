@@ -30,6 +30,11 @@ class Car:
     location_entity: str
     range_entity: str
     kwh_per_km: float = 0.17
+    # Leeg = automatisch zoeken op basis van de naam (bv. sensor.witte_koets_battery_level)
+    battery_level_entity: str = ""
+    charge_limit_entity: str = ""
+    time_to_full_entity: str = ""
+    charge_rate_entity: str = ""
 
 
 @dataclass

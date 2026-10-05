@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.2.12
+- Auto's leren: max actieradius = actieradius / accu% x laadlimiet (Tesla), gemiddeld over metingen en
+  bewaard; ook "Complete" van de Zappi telt als meting. Vervangt de vaste max-km in de planning
+- Laadsnelheid (km/u) gemeten uit de Tesla-laadsnelheid of uit de stijging van de actieradius
+- Tijdens Fast laden gebruikt de planning de "tijd tot vol" van de auto zelf, zodat het laadblok
+  korter wordt en in de goedkoopste uren valt
+- Tesla-entities worden automatisch gevonden (battery_level, charge_limit, time_to_full_charge,
+  charge_rate); laadplan en Instellingen tonen geleerde waarden en wat de auto zegt
+
 ## 0.2.11
 - Nieuwe schakelaar "Auto nu snel laden" (`input_boolean.energymix_auto_snel_laden`, standaard uit):
   Zappi meteen op Fast tot de auto vol is, boven alle planning. Gaat vanzelf weer uit als de auto vol

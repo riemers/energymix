@@ -2,9 +2,9 @@ import { useEffect, useRef, useState } from "react";
 import { getSettings, saveSettings, searchEntities } from "./api";
 import { COMPONENTS } from "./format";
 import { Badge, Card } from "./ui";
-import type { EntityOption, SettingField, Settings as SettingsT } from "./types";
+import type { EntityOption, Live, SettingField, Settings as SettingsT } from "./types";
 
-export default function Settings({ onSaved }: { onSaved: () => void }) {
+export default function Settings({ onSaved, live }: { onSaved: () => void; live?: Live }) {
   const [data, setData] = useState<SettingsT | null>(null);
   const [draft, setDraft] = useState<Record<string, unknown>>({});
   const [saving, setSaving] = useState(false);
@@ -64,15 +64,36 @@ export default function Settings({ onSaved }: { onSaved: () => void }) {
 
       <Card title="Auto's">
         <div className="grid gap-3 sm:grid-cols-2">
-          {data.cars.map((c) => (
-            <div key={c.name} className="rounded-xl bg-white/[0.03] p-3 text-xs">
-              <div className="mb-1 text-sm font-medium text-slate-200">{c.name}</div>
-              <div className="text-slate-400">vol: {c.max_range_km} km · {c.kwh_per_km} kWh/km</div>
-              <div className="mt-1 truncate text-slate-500">{c.range_entity}</div>
-            </div>
-          ))}
+          {data.cars.map((c) => {
+            const lc = live?.cars.find((x) => x.name === c.name);
+            const ents = lc?.entities ?? {};
+            return (
+              <div key={c.name} className="rounded-xl bg-white/[0.03] p-3 text-xs">
+                <div className="mb-1 text-sm font-medium text-slate-200">{c.name}</div>
+                <div className="text-slate-400">
+                  vol: {lc?.learned_max_km ? <><b className="text-slate-200">{lc.learned_max_km} km</b> geleerd</> : `${c.max_range_km} km ingesteld`}
+                  {lc?.learned_max_km ? <span className="text-slate-600"> (ingesteld {c.max_range_km})</span> : null}
+                </div>
+                <div className="text-slate-400">
+                  laadsnelheid: {lc?.learned_speed_kmh ? <><b className="text-slate-200">{Math.round(lc.learned_speed_kmh)} km/u</b> gemeten</> : "nog niet gemeten"}
+                </div>
+                <div className="mt-2 space-y-0.5 text-[11px]">
+                  {[["battery_level", "accu %"], ["charge_limit", "laadlimiet"], ["time_to_full", "tijd tot vol"], ["charge_rate", "laadsnelheid"]].map(([k, l]) => (
+                    <div key={k} className="flex gap-2">
+                      <span className={ents[k] ? "text-emerald-400" : "text-slate-600"}>{ents[k] ? "✓" : "–"}</span>
+                      <span className="w-20 text-slate-500">{l}</span>
+                      <span className="truncate text-slate-400">{ents[k] ?? "niet gevonden"}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            );
+          })}
         </div>
-        <p className="mt-2 text-[11px] text-slate-500">Auto's pas je aan in de add-on-configuratie (<code>cars</code>).</p>
+        <p className="mt-2 text-[11px] text-slate-500">
+          Max km en laadsnelheid leert Energymix uit de Tesla-gegevens (accu %, laadlimiet, laadsnelheid). Niet gevonden?
+          Vul de entity in bij <code>cars</code> in de add-on-configuratie (bv. <code>battery_level_entity</code>).
+        </p>
       </Card>
 
       {(dirty || msg) && (
