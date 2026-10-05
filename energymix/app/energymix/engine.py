@@ -60,6 +60,7 @@ class Engine:
         self.sources: dict[str, str] = {}
         self._soc_warned = False
         self._master_seen = False
+        self._boost_plugged = False
         self.ha.on_change(self._on_ha_change)
 
     @property
@@ -260,6 +261,7 @@ class Engine:
             log.warning("Helpers: %s", e)
         now = datetime.now(timezone.utc)
         self.state = self.collect()
+        await self._boost_auto_off()
         history = list({p.start: p for p in [*self.store.price_history(8), *self.prices]}.values())
         self.plan = make_plan(self.cfg, self.prices, self.state, now, self.forecast(now), history)
         self.story = tell(self.plan, self.state, self.tz)
@@ -284,6 +286,11 @@ class Engine:
                 log.info("Victron laadt op fase(s) %s (uit de Multi's)", eff.victron_phases)
                 self.cfg = self.executor.cfg = self.regulator.cfg = eff
         self.state = self.collect()
+        if self.cfg.car_boost:
+            before = self.cfg.car_boost
+            await self._boost_auto_off()
+            if before and not self.cfg.car_boost:
+                self._wake.set()  # direct opnieuw plannen
         now = time.time()
         if now - self._last_sample >= SAMPLE_SECONDS:
             self._last_sample = now
@@ -317,6 +324,32 @@ class Engine:
                 await asyncio.sleep(5)  # debounce: meerdere wijzigingen tegelijk
             except asyncio.TimeoutError:
                 pass
+
+    async def _boost_auto_off(self) -> None:
+        """"Auto nu snel laden" zet zichzelf uit als de auto vol is of de stekker eruit gaat.
+
+        Aangezet vóór het insteken? Dan wachten we tot de auto eerst aangesloten is
+        geweest, anders zou hij direct weer uitgaan.
+        """
+        if not self.cfg.car_boost or not self.state:
+            self._boost_plugged = False
+            return
+        st = self.state
+        if st.car_plugged:
+            self._boost_plugged = True
+        reason = "auto vol" if st.car_full else "stekker eruit" if (self._boost_plugged and not st.car_plugged) else None
+        if not reason:
+            return
+        log.info("Snel laden klaar (%s): schakelaar uit", reason)
+        self._boost_plugged = False
+        try:
+            await helpers.set_helper(self.ha, "car_boost", False)
+            self.helper_values["car_boost"] = False
+            self.cfg = self.executor.cfg = self.regulator.cfg = self.effective(
+                helpers.apply_overrides(self.base_cfg, self.helper_values)
+            )
+        except Exception as e:  # noqa: BLE001
+            log.warning("Snel laden uitzetten mislukt: %s", e)
 
     async def shutdown(self) -> None:
         """Bij stoppen van de add-on: Victron niet in een tijdelijke stand achterlaten."""

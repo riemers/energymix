@@ -103,6 +103,7 @@ async def main() -> None:
             "sensor.grid_l3": "2",
             "zone.home": "zoning",
             "input_boolean.energymix_aansturen": "off",
+            "input_boolean.energymix_auto_snel_laden": "off",
             "input_boolean.energymix_terugleveren": "on",
             "input_boolean.energymix_accu_van_net_laden": "on",
             "input_number.energymix_accu_doel": "95.0",

@@ -35,6 +35,7 @@ automations gebruiken. Ze zijn hetzelfde als de schakelaars in het Energymix-das
 | Helper | Betekenis |
 |--------|-----------|
 | `input_boolean.energymix_aansturen` | Hoofdschakelaar (uit = alleen meekijken) |
+| `input_boolean.energymix_auto_snel_laden` | Auto nu Fast tot vol, boven alle planning; gaat vanzelf uit |
 | `input_boolean.energymix_terugleveren` | Terugleveren bij grote prijsverschillen |
 | `input_boolean.energymix_accu_van_net_laden` | Accu goedkoop van het net laden |
 | `input_number.energymix_accu_doel` | Accu laden tot (%) |

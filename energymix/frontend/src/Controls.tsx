@@ -28,6 +28,13 @@ export default function Controls({ status, onStatus }: Props) {
 
   return (
     <div className="space-y-4">
+      <div className={`-mx-1 rounded-xl px-1 py-1 transition ${h.car_boost?.value ? "bg-pink-500/10 ring-1 ring-pink-400/40" : ""}`}>
+        <Row
+          title="Auto nu snel laden"
+          sub={h.car_boost?.value ? "Aan: Fast tot de auto vol is, daarna gaat dit vanzelf uit" : "Boeien wat het kost: nu Fast tot vol (gaat vanzelf weer uit)"}
+          right={<Switch checked={!!h.car_boost?.value} disabled={busy === "car_boost"} onChange={(v) => set("car_boost", v)} />}
+        />
+      </div>
       <Row
         title="Aansturen"
         sub={status.master ? "Energymix stuurt de onderdelen die live staan" : "Alleen meekijken: er wordt niets geschakeld"}

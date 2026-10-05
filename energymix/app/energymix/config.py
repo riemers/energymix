@@ -129,6 +129,7 @@ class Config:
     # Auto
     car_min_range_km: float = 250
     car_ready_time: str = "07:30"
+    car_boost: bool = False  # "Auto nu snel laden": Fast tot vol, boven alle planning
     car_opportunistic_price: float = 0.15  # boven het minimum alleen laden onder deze prijs
     charge_speed_km_per_hour: float = 65
     default_charge_minutes: int = 360

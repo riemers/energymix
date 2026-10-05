@@ -320,3 +320,15 @@ def test_keeps_charging_when_later_block_barely_cheaper():
     prices = hourly(at(0), [0.200, 0.200, 0.300, 0.150, 0.150] + [0.30] * 19)
     plan = make_plan(cfg(), prices, st, at(0, 10))
     assert plan.now.zappi_mode == "Eco+"
+
+
+def test_boost_fast_now_until_full_even_if_expensive():
+    prices = hourly(at(0), [0.50] * 12 + [0.05] * 12)  # nu duur, later goedkoop
+    st = State(zappi_plug="EV Connected", carcharger_mode="auto", cars=car("270"))  # 130 km = 2u
+    plan = make_plan(cfg(car_boost=True), prices, st, at(8, 30))
+    h = by_hour(plan)
+    assert plan.now.zappi_mode == "Fast" and "snel laden" in plan.now.reasons["zappi"]
+    assert h[9].zappi_mode == "Fast" and h[10].zappi_mode == "Fast"
+    assert h[11].zappi_mode == "Eco+" and h[12].zappi_mode == "Eco+"  # vol: niet nog eens goedkoop laden
+    assert plan.car.full_at == at(10, 30)
+    assert plan.car.sessions[0]["kinds"] == ["snel"]

@@ -133,3 +133,28 @@ async def test_master_off_restores_once(tmp_path):
     e.ha.states[master]["state"] = "off"
     await e._helpers()
     assert calls == ["Aansturen uitgezet"]
+
+
+async def test_boost_switches_itself_off(tmp_path):
+    from energymix.engine import Engine
+    from energymix.planner import State
+
+    e = Engine(Config(car_boost=True), None, Store(tmp_path / "t.db"))
+    calls = []
+
+    async def fake_call(domain, service, entity_id, data=None):
+        calls.append((service, entity_id))
+
+    e.ha.call_service = fake_call
+    # Aangezet vóór het insteken: niet meteen uit
+    e.state = State(zappi_plug="EV Disconnected")
+    await e._boost_auto_off()
+    assert calls == [] and e.cfg.car_boost
+    # Ingestoken, laadt, dan vol: uit
+    e.state = State(zappi_plug="EV Connected", zappi_status="Charging")
+    await e._boost_auto_off()
+    assert calls == []
+    e.state = State(zappi_plug="EV Connected", zappi_status="Complete")
+    await e._boost_auto_off()
+    assert calls == [("turn_off", "input_boolean.energymix_auto_snel_laden")]
+    assert not e.cfg.car_boost
