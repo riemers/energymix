@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.2.20
+- Geen onnodig "accu bewaren" meer: energie die aan het eind van de planning nog in de accu zit werd te
+  hoog gewaardeerd (goedkope prijs + laadverlies), waardoor bewaren 's nachts altijd een beetje winst
+  leek. Nu: wat die kWh later echt bespaart (na ontlaadverlies)
+- Bewaren of van het net laden om later méér terug te leveren (bv. omdat het terugleveren op de reserve
+  stopt) moet nu de drempel voor terugleveren halen (`export_min_spread`), niet die voor laden
+- De uitleg zegt dan ook eerlijk "meer terugleveren om ..." in plaats van "accu dekt om ..."
+
 ## 0.2.19
 - Prognose "accu leeg om" als er geen auto laadt: alleen huis en zon, met marge (krap: 20% meer
   verbruik en 30% minder zon; ruim: 15% minder verbruik en 30% meer zon). Na de bekende prognose
