@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.2.21
+- "Accu bewaren" is nu een schakelaar, standaard uit (`input_boolean.energymix_accu_bewaren`)
+- Bij de schakelaar staat wat bewaren in de huidige planning zou schelen, en wanneer: aan of uit, hij
+  rekent beide door. Ook als `sensor.energymix_bewaren_waarde` (met de blokken als attribuut)
+
 ## 0.2.20
 - Geen onnodig "accu bewaren" meer: energie die aan het eind van de planning nog in de accu zit werd te
   hoog gewaardeerd (goedkope prijs + laadverlies), waardoor bewaren 's nachts altijd een beetje winst
