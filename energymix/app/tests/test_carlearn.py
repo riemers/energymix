@@ -50,3 +50,16 @@ def test_learns_speed_from_charge_rate_or_range_increase():
     lr2.update("B", 100, None, None, None, charging_fast=True, complete=False, now=0)
     r = lr2.update("B", 130, None, None, None, charging_fast=True, complete=False, now=1800)  # 30 km in 30 min
     assert round(r.speed_kmh) == 60
+
+
+def test_today_totals_integrates_samples(tmp_path):
+    from zoneinfo import ZoneInfo
+
+    tz = ZoneInfo("Europe/Amsterdam")
+    store = Store(tmp_path / "t.db")
+    start = datetime.now(tz).replace(hour=0, minute=0, second=0, microsecond=0) + timedelta(hours=1)
+    for m in range(61):  # 1 uur, elke minuut
+        store.add_sample(start + timedelta(minutes=m), soc=50, pv_w=2000, grid_w=-500, battery_w=-1000,
+                         house_w=700, zappi_w=0, price=0.2)
+    t = store.today_totals(tz)
+    assert t["pv"] == 2.0 and t["house"] == 0.7 and t["grid_out"] == 0.5 and t["battery_net"] == -1.0

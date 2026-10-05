@@ -3,7 +3,7 @@ import { getDecisions, getLive, getStats, getStatus, replan } from "./api";
 import Controls from "./Controls";
 import Flow from "./Flow";
 import Phases from "./Phases";
-import { COMPONENTS, dayTime, eur, priceColor, relDay, time, valueLabel, watt } from "./format";
+import { COMPONENTS, LEVELS, dayTime, eur, relDay, slotColor, time, valueLabel, watt } from "./format";
 import { ICONS, Refresh } from "./icons";
 import Settings from "./Settings";
 import Stats from "./Stats";
@@ -210,21 +210,27 @@ function PriceStory({ status, live }: { status: Status; live: Live }) {
   const next = plan?.slots.slice(0, 48) ?? [];
   const min = next.length ? next.reduce((a, s) => (s.price < a.price ? s : a), next[0]) : null;
   const max = next.length ? next.reduce((a, s) => (s.price > a.price ? s : a), next[0]) : null;
+  const nowLevel = plan?.slots.find((s) => Date.parse(s.start) <= Date.parse(live.ts) && Date.parse(live.ts) < Date.parse(s.end))?.level ?? null;
   return (
     <Card>
       <div className="flex items-start gap-4">
         <div className="shrink-0">
           <div className="text-[11px] uppercase tracking-wider text-slate-500">Prijs nu</div>
-          <div className="text-2xl font-semibold tracking-tight" style={{ color: p !== null ? priceColor(p, status.cheap_price, status.force_fast_price) : undefined }}>
+          <div className="text-2xl font-semibold tracking-tight" style={{ color: p !== null ? slotColor(p, nowLevel, status.cheap_price, status.force_fast_price) : undefined }}>
             {p !== null ? eur(p) : "–"}
           </div>
+          {nowLevel && LEVELS[nowLevel] && (
+            <span className="rounded px-1.5 py-0.5 text-[10px] font-medium text-slate-950" style={{ background: LEVELS[nowLevel].color }}>
+              {LEVELS[nowLevel].label}
+            </span>
+          )}
           {min && max && (
             <div className="mt-1 space-y-0.5 text-[11px] text-slate-500">
               <div>laagst {eur(min.price, 2)} · {relDay(min.start, tz)}</div>
               <div>hoogst {eur(max.price, 2)} · {relDay(max.start, tz)}</div>
             </div>
           )}
-          <Spark plan={plan} status={status} />
+          {status.today && status.today.samples > 1 && <TodayTiles today={status.today} />}
         </div>
         <div className="min-w-0 flex-1 border-l border-white/5 pl-4">
           <div className="mb-1 text-[11px] uppercase tracking-wider text-slate-500">Wat er gebeurt</div>
@@ -237,23 +243,40 @@ function PriceStory({ status, live }: { status: Status; live: Live }) {
   );
 }
 
-function Spark({ plan, status }: { plan: Status["plan"]; status: Status }) {
-  const slots = plan?.slots.slice(0, 48) ?? [];
-  if (slots.length < 2) return null;
-  const W = 120;
-  const H = 30;
-  const prices = slots.map((s) => s.price);
-  const mx = Math.max(...prices, 0.01);
-  const mn = Math.min(...prices, 0);
-  const bw = W / slots.length;
+function TodayTiles({ today }: { today: Status["today"] }) {
+  const kwh = (v: number) => `${v.toFixed(1).replace(".", ",")}`;
+  const sign = (v: number) => (v > 0.05 ? "+" : v < -0.05 ? "−" : "");
+  const rows: { icon: keyof typeof ICONS; color: string; label: string; value: string; sub?: string }[] = [
+    { icon: "home", color: "var(--color-house)", label: "verbruik", value: kwh(today.house) },
+    { icon: "sun", color: "var(--color-sun)", label: "zon", value: kwh(today.pv) },
+    { icon: "car", color: "var(--color-car)", label: "auto", value: kwh(today.car) },
+    {
+      icon: "battery", color: "var(--color-batt)", label: "accu",
+      value: `${sign(today.battery_net)}${kwh(Math.abs(today.battery_net))}`,
+      sub: `↑${kwh(today.battery_in)} ↓${kwh(today.battery_out)}`,
+    },
+    {
+      icon: "grid", color: "var(--color-grid)", label: "net",
+      value: `${sign(today.grid_in - today.grid_out)}${kwh(Math.abs(today.grid_in - today.grid_out))}`,
+      sub: `in ${kwh(today.grid_in)} · uit ${kwh(today.grid_out)}`,
+    },
+  ];
   return (
-    <svg width={W} height={H} className="mt-2">
-      {slots.map((s, i) => {
-        const h = Math.max(1, ((s.price - mn) / (mx - mn)) * H);
-        return <rect key={s.start} x={i * bw} y={H - h} width={Math.max(1, bw - 0.6)} height={h} rx={1}
-          fill={priceColor(s.price, status.cheap_price, status.force_fast_price)} opacity={i === 0 ? 1 : 0.6} />;
-      })}
-    </svg>
+    <div className="mt-3 border-t border-white/5 pt-2">
+      <div className="mb-1.5 text-[10px] uppercase tracking-wider text-slate-500">Vandaag (kWh)</div>
+      <div className="space-y-1">
+        {rows.map((r) => {
+          const Icon = ICONS[r.icon];
+          return (
+            <div key={r.label} className="flex items-center gap-2 text-[12px]" title={r.sub}>
+              <span style={{ color: r.color }}><Icon size={14} /></span>
+              <span className="w-12 text-slate-500">{r.label}</span>
+              <span className="ml-auto font-semibold tabular-nums text-slate-200">{r.value}</span>
+            </div>
+          );
+        })}
+      </div>
+    </div>
   );
 }
 

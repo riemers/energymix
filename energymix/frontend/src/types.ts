@@ -5,6 +5,7 @@ export interface SlotPlan {
   end: string;
   price: number;
   sell_price: number;
+  level: string | null;
   pv_on: boolean | null;
   ess_state: number | null;
   dvcc_current: number | null;
@@ -182,6 +183,19 @@ export interface Status {
   plan: Plan | null;
   actions: Action[];
   live: Live;
+  today: Today;
+}
+
+export interface Today {
+  house: number;
+  pv: number;
+  car: number;
+  battery_in: number;
+  battery_out: number;
+  battery_net: number;
+  grid_in: number;
+  grid_out: number;
+  samples: number;
 }
 
 export interface Decision {

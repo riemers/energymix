@@ -94,6 +94,32 @@ class Store:
             by_hour.setdefault(h, []).append(r["house_w"])
         return {h: sum(v) / len(v) for h, v in by_hour.items() if len(v) >= 10}
 
+    def today_totals(self, tz) -> dict:
+        """kWh van vandaag (lokale tijd) uit de metingen per minuut."""
+        local_midnight = datetime.now(tz).replace(hour=0, minute=0, second=0, microsecond=0)
+        rows = self.samples(local_midnight)
+        tot = {k: 0.0 for k in ("house", "pv", "car", "battery_in", "battery_out", "grid_in", "grid_out")}
+        prev = None
+        for r in rows:
+            t = datetime.fromisoformat(r["ts"])
+            if prev is not None:
+                dt_h = (t - prev).total_seconds() / 3600
+                if 0 < dt_h <= 15 / 60:  # langere gaten (add-on uit) niet opvullen
+                    w = lambda k: (r[k] or 0) * dt_h / 1000  # noqa: E731
+                    tot["house"] += max(0.0, w("house_w"))
+                    tot["pv"] += max(0.0, w("pv_w"))
+                    tot["car"] += max(0.0, w("zappi_w"))
+                    b = w("battery_w")
+                    tot["battery_in" if b > 0 else "battery_out"] += abs(b)
+                    g = w("grid_w")
+                    tot["grid_in" if g > 0 else "grid_out"] += abs(g)
+            prev = t
+        out = {k: round(v, 1) for k, v in tot.items()}
+        out["battery_net"] = round(tot["battery_in"] - tot["battery_out"], 1)
+        out["since"] = local_midnight.isoformat()
+        out["samples"] = len(rows)
+        return out
+
     def battery_stats(self, tz, capacity_kwh: float, days: int = 14) -> dict:
         rows = self.samples(datetime.now(timezone.utc) - timedelta(days=days))
         per_day: dict[str, dict] = {}

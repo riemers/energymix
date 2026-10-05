@@ -56,3 +56,18 @@ export function valueLabel(component: string, v: unknown): string {
       return String(v);
   }
 }
+
+// Tibber-prijsniveaus per kwartier
+export const LEVELS: Record<string, { label: string; color: string }> = {
+  VERY_CHEAP: { label: "zeer goedkoop", color: "#10b981" },
+  CHEAP: { label: "goedkoop", color: "#6ee7b7" },
+  NORMAL: { label: "normaal", color: "#64748b" },
+  EXPENSIVE: { label: "duur", color: "#fb923c" },
+  VERY_EXPENSIVE: { label: "zeer duur", color: "#ef4444" },
+};
+
+export function slotColor(price: number, level: string | null | undefined, cheap: number, fast: number): string {
+  if (price < 0) return "var(--color-neg)";
+  const l = level ? LEVELS[level] : undefined;
+  return l ? l.color : priceColor(price, cheap, fast);
+}

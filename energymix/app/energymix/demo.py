@@ -33,6 +33,12 @@ def fake_prices(tz: ZoneInfo):
         if i in range(52, 58):
             p = -0.02
         pts.append((day + timedelta(minutes=15 * i), round(p, 4), None, round(p - 0.15, 4)))
+    # Tibber-achtige niveaus t.o.v. het gemiddelde
+    avg = sum(x[1] for x in pts) / len(pts)
+    def level(v):
+        r = v / avg
+        return "VERY_CHEAP" if r < 0.6 else "CHEAP" if r < 0.9 else "NORMAL" if r < 1.15 else "EXPENSIVE" if r < 1.4 else "VERY_EXPENSIVE"
+    pts = [(t, v, level(v), e) for t, v, _, e in pts]
     return build_slots(pts)
 
 
