@@ -268,3 +268,19 @@ def test_car_sessions_show_when_and_how_far():
     assert sess["mode"] == "Fast" and sess["kinds"] == ["goedkoopst"]
     assert sess["start"] == at(10).isoformat() and sess["end"] == at(12).isoformat()
     assert sess["range_start_km"] == 270 and sess["range_end_km"] == 400
+
+
+def test_car_takes_solar_first_battery_does_not_rise():
+    # Zonnige middag (4 kW), auto laadt 11 kW: alle zon gaat naar de auto, accu stijgt niet
+    prices = hourly(at(0), [0.30] * 11 + [0.12] * 5 + [0.30] * 8)
+    pv = {s.start: (4.0 if 11 <= s.start.astimezone(TZ).hour < 16 else 0.0) for s in prices}
+    st = State(soc=50, zappi_plug="EV Connected", carcharger_mode="auto", cars=car("75"))
+    plan = make_plan(cfg(house_load_default_w=500, grid_charge_enabled=False), prices, st, at(11), Forecast(pv_kwh=pv))
+    h = by_hour(plan)
+    assert all(h[x].zappi_mode == "Fast" for x in range(11, 16))
+    socs = [h[x].soc for x in range(11, 16)]
+    assert max(socs) <= 50.0 + 0.1  # accu laadt niet terwijl de auto laadt
+    # Zonder auto zou de zon de accu wel vullen
+    st2 = State(soc=50)
+    plan2 = make_plan(cfg(house_load_default_w=500, grid_charge_enabled=False), prices, st2, at(11), Forecast(pv_kwh=pv))
+    assert by_hour(plan2)[15].soc > 60
