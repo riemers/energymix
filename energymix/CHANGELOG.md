@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.2.19
+- Prognose "accu leeg om" als er geen auto laadt: alleen huis en zon, met marge (krap: 20% meer
+  verbruik en 30% minder zon; ruim: 15% minder verbruik en 30% meer zon). Na de bekende prognose
+  herhaalt hij het laatste dagpatroon, tot 7 dagen vooruit. Te zien onder "Nu" in het dashboard en als
+  `sensor.energymix_accu_leeg_om` (met attributen `krap` en `ruim`)
+
 ## 0.2.18
 - Geleerd huisverbruik is robuuster: metingen terwijl de auto laadt tellen niet mee, negatieve waarden
   worden 0 en de hoogste 10% per uur (pieken) valt weg. Een opgeblazen nachtverbruik liet de planner

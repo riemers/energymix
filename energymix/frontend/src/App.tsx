@@ -10,7 +10,7 @@ import Stats from "./Stats";
 import Sessions from "./Sessions";
 import Timeline from "./Timeline";
 import { Badge, Card } from "./ui";
-import type { Action, Decision, Live, Stats as StatsT, Status } from "./types";
+import type { Action, Decision, Live, Stats as StatsT, Status, Summary } from "./types";
 
 type Tab = "overzicht" | "statistiek" | "logboek" | "instellingen";
 const TABS: { key: Tab; label: string }[] = [
@@ -152,6 +152,7 @@ function Overview({ status, live, onStatus }: { status: Status; live: Live; onSt
           </div>
           <div className="mt-3 space-y-2 rounded-xl bg-white/[0.03] px-3 py-3">
             <Phases live={live} />
+            {plan?.summary.runway && <Runway r={plan.summary.runway} tz={tz} />}
             {reg.headroom_w !== null && (
               <div className="flex flex-wrap items-center gap-2 border-t border-white/5 pt-2 text-xs text-slate-400">
                 <span className="text-slate-300">Accu laadt met {reg.current_a} A</span>
@@ -345,5 +346,31 @@ function DecisionLog({ items, tz }: { items: Decision[]; tz: string }) {
         );
       })}
     </ul>
+  );
+}
+
+function Runway({ r, tz }: { r: NonNullable<Summary["runway"]>; tz: string }) {
+  // Afronden op het kwartier: het is een prognose, geen dienstregeling
+  const q = (iso: string) => relDay(new Date(Math.round(new Date(iso).getTime() / 900_000) * 900_000).toISOString(), tz);
+  const hours = (iso: string) => (new Date(iso).getTime() - Date.now()) / 3_600_000;
+  let main: React.ReactNode;
+  if (!r.expected && !r.early) {
+    main = <>Zonder auto houdt de accu het <span className="text-slate-200">minstens 7 dagen</span> (zon vult bij)</>;
+  } else if (!r.expected) {
+    main = <>Zonder auto houdt de accu het waarschijnlijk <span className="text-slate-200">7+ dagen</span>; krap gerekend leeg {q(r.early!)}</>;
+  } else {
+    const h = hours(r.expected);
+    main = (
+      <>
+        Zonder auto is de accu leeg rond <span className="text-slate-200">{q(r.expected)}</span>
+        <span className="text-slate-500"> (±{h < 24 ? `${Math.round(h)} u` : `${(h / 24).toFixed(1).replace(".", ",")} dagen`})</span>
+        {" · marge "}{r.early ? q(r.early) : "?"} – {r.late ? q(r.late) : "7+ dagen"}
+      </>
+    );
+  }
+  return (
+    <div className="border-t border-white/5 pt-2 text-xs text-slate-400" title="Alleen huis en zon, Energymix stuurt niets. Krap: 20% meer verbruik en 30% minder zon; ruim: 15% minder verbruik en 30% meer zon. Na de bekende prognose herhaalt hij het laatste dagpatroon. Leeg = ESS-minimum 10%.">
+      {main}
+    </div>
   );
 }
