@@ -66,7 +66,8 @@ class Config:
     # Entities: bediening en toestand
     carcharger_select_entity: str = "input_select.carcharger"
     vannacht_entity: str = "input_boolean.vannacht"
-    battery_soc_entity: str = "sensor.victron_battery_soc"
+    battery_soc_entity: str = "sensor.victron_battery_soc"  # alleen terugval als de GX niets geeft
+    battery_soc_source: str = "system"  # "system" = actieve accumonitor van de GX, of "battery/<instance>"
     solar_today_entity: str = "sensor.energy_production_today"
     solar_remaining_entity: str = "sensor.energy_production_today_remaining"
     solar_tomorrow_entity: str = "sensor.energy_production_tomorrow"

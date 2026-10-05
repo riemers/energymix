@@ -123,7 +123,8 @@ export default function Flow({ live }: { live: Live }) {
         {watt(house)}
       </text>
 
-      <Bubble node={NODES.sun} icon={ic(Sun, NODES.sun)} label="zon" value={watt(pv)} sub="zonnepanelen" dim={pv < 30} side />
+      <Bubble node={NODES.sun} icon={ic(Sun, NODES.sun)} label="zon" value={watt(pv)}
+        sub={live.sources?.pv_w?.startsWith("Victron") ? "via Victron (Envoy weg)" : "zonnepanelen"} dim={pv < 30} side />
       <Bubble
         node={NODES.grid}
         icon={ic(Grid, NODES.grid)}

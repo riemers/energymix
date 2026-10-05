@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.2.4
+- Kies zelf welke accumonitor de SoC levert (standaard de actieve monitor van de GX, bv. de Lynx);
+  Instellingen tonen alle accu's die de GX kent met naam, SoC en vermogen
+- Zonnepanelen: de Envoy is leidend (zelf gevonden als het veld leeg is); de PV-omvormer van de
+  Victron alleen als reserve wanneer de Envoy niet beschikbaar is
+
 ## 0.2.3
 - Accuniveau komt nu van de Victron GX zelf (MQTT); de HA-sensor is alleen terugval.
   Wijken ze meer dan 5% af, dan staat dat in het logboek

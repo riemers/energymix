@@ -10,6 +10,7 @@ from pathlib import Path
 from aiohttp import web
 
 from . import helpers
+from .discovery import suggest
 from .engine import Engine
 
 STATIC = Path(__file__).parent / "static"
@@ -17,7 +18,8 @@ STATIC = Path(__file__).parent / "static"
 # Velden die je in het dashboard onder Instellingen kunt aanpassen
 EDITABLE = [
     # (sleutel, label, soort, groep)
-    ("battery_soc_entity", "Accu SoC", "entity", "Accu"),
+    ("battery_soc_source", "Accumonitor (SoC)", "battery", "Accu"),
+    ("battery_soc_entity", "Accu SoC uit HA (alleen terugval)", "entity", "Accu"),
     ("battery_power_entity", "Accu vermogen (+ = laden)", "entity", "Accu"),
     ("battery_capacity_kwh", "Bruikbare capaciteit (kWh)", "number", "Accu"),
     ("dvcc_max_charge_current", "DVCC max (A)", "number", "Accu"),
@@ -50,22 +52,11 @@ EDITABLE = [
 ]
 
 
-# Bekende namen van entities uit veelgebruikte integraties, voor suggesties
-SUGGEST = {
-    "pv_power_entity": [r"^sensor\.envoy_.*_current_power_production$", r"^sensor\.envoy_.*_power_production$"],
-    "zappi_power_entity": [r"^sensor\..*zappi.*power_ct_internal_load$", r"^sensor\..*zappi.*internal_load$",
-                           r"^sensor\..*zappi.*charge_power$"],
-    "zappi_plug_entity": [r"^sensor\..*zappi.*plug_status$"],
-    "zappi_status_entity": [r"^sensor\..*zappi.*_status$"],
-    "zappi_mode_entity": [r"^select\..*zappi.*charge_mode$"],
-    "pv_switch_entity": [r"^switch\.envoy_.*_production$"],
-    "solar_remaining_entity": [r"^sensor\.energy_production_today_remaining.*$"],
-    "solar_tomorrow_entity": [r"^sensor\.energy_production_tomorrow.*$"],
-}
 # Wat er gebruikt wordt als een entity leeg blijft
 FALLBACK = {
     "grid_power_entity": ("grid_w", "som van de fases via Victron MQTT"),
     "battery_power_entity": ("battery_w", "Victron MQTT"),
+    "pv_power_entity": ("pv_w", "Envoy automatisch, Victron PV-omvormer als reserve"),
     "grid_l1_entity": ("phases", "Victron MQTT"),
     "grid_l2_entity": ("phases", "Victron MQTT"),
     "grid_l3_entity": ("phases", "Victron MQTT"),
@@ -87,18 +78,6 @@ def entity_age(st: dict | None) -> float | None:
 # Sensoren die altijd blijven veranderen: staan ze lang stil, dan klopt er iets niet
 AGE_CHECK = {"battery_soc_entity", "battery_power_entity", "grid_power_entity",
              "grid_l1_entity", "grid_l2_entity", "grid_l3_entity"}
-
-EXCLUDE = {"zappi_status_entity": "plug_status"}
-
-
-def suggest(states: dict, key: str) -> str | None:
-    for pattern in SUGGEST.get(key, []):
-        rx = re.compile(pattern)
-        hits = sorted(e for e in states if rx.match(e) and not (EXCLUDE.get(key) and EXCLUDE[key] in e))
-        if hits:
-            return hits[0]
-    return None
-
 
 def create_app(engine: Engine) -> web.Application:
     app = web.Application()
@@ -174,13 +153,16 @@ def create_app(engine: Engine) -> web.Application:
             f = {"key": k, "label": label, "kind": kind, "group": group, "value": val,
                  "state": engine.ha.state(val) if kind == "entity" and val else None,
                  "unit": engine.ha.attributes(val).get("unit_of_measurement") if kind == "entity" and val else None,
-                 "suggestion": None, "fallback": None, "age_s": None}
+                 "suggestion": None, "fallback": None, "age_s": None, "options": None}
             if kind == "entity" and val and k in AGE_CHECK:
                 f["age_s"] = entity_age(engine.ha.states.get(val))
             if k == "battery_soc_entity":
-                v_soc = engine.victron.soc()
+                v_soc = engine.victron.soc(engine.base_cfg.battery_soc_source)
                 if v_soc is not None:
-                    f["fallback"] = {"label": f"Victron GX zegt {v_soc:.1f}% en gaat voor", "active": True}
+                    f["fallback"] = {"label": f"niet gebruikt: de Victron-monitor zegt {v_soc:.1f}% en gaat voor", "active": True}
+            if kind == "battery":
+                f["options"] = [{"source": "system", "name": "Actieve monitor van de GX", "soc": engine.victron.soc("system"),
+                                 "power_w": None, "active": False}, *engine.victron.batteries()]
             if kind == "entity" and not val:
                 sug = suggest(engine.ha.states, k)
                 if sug:

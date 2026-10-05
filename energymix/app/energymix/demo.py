@@ -120,6 +120,14 @@ async def main() -> None:
             engine.ha.states[eid]["attributes"] = {"unit_of_measurement": "W"}
         for eid in ("sensor.grid_l1", "sensor.grid_l2", "sensor.grid_l3"):
             engine.ha.states[eid]["attributes"] = {"unit_of_measurement": "A"}
+        # Nep-GX: Lynx (actief) en de BMS van de accu's
+        engine.victron.portal_id = "demo"
+        import json as _json
+        for t, val in [("system/0/ActiveBatteryService", "com.victronenergy.battery/512"),
+                       ("system/0/Dc/Battery/Soc", 49.5), ("battery/512/Soc", 49.5),
+                       ("battery/512/ProductName", "Lynx Shunt VE.Can"), ("battery/512/Dc/0/Power", 2306),
+                       ("battery/1/Soc", 73.0), ("battery/1/CustomName", "Battterij"), ("battery/1/Dc/0/Power", 2037)]:
+            engine.victron.handle(f"N/demo/{t}", _json.dumps({"value": val}).encode(), now=float("inf"))
         engine.ha.connected.set()
         engine.prices = fake_prices(tz)
         engine.prices_fetched = float("inf")

@@ -48,3 +48,40 @@ def test_engine_prefers_victron_soc_over_stale_ha_sensor(tmp_path):
     assert e.collect().soc == 70.0 and e.sources["soc"] == "HA"
     e.victron.handle("N/p/system/0/Dc/Battery/Soc", msg(49.5))
     assert e.collect().soc == 49.5 and e.sources["soc"] == "Victron MQTT"
+
+
+def test_lists_batteries_and_picks_chosen_monitor():
+    x = v()
+    x.handle("N/abc123/system/0/ActiveBatteryService", msg("com.victronenergy.battery/512"))
+    x.handle("N/abc123/system/0/Dc/Battery/Soc", msg(49.5))
+    x.handle("N/abc123/battery/512/Soc", msg(49.5))
+    x.handle("N/abc123/battery/512/ProductName", msg("Lynx Smart BMS"))
+    x.handle("N/abc123/battery/1/Soc", msg(73.0))
+    x.handle("N/abc123/battery/1/CustomName", msg("Battterij"))
+    bats = {b["source"]: b for b in x.batteries()}
+    assert bats["battery/512"]["name"] == "Lynx Smart BMS" and bats["battery/512"]["active"]
+    assert bats["battery/1"]["name"] == "Battterij" and not bats["battery/1"]["active"]
+    assert x.soc() == 49.5 and x.soc("battery/1") == 73.0
+
+
+def test_pv_from_victron_sums_phases():
+    x = v()
+    for i, w in enumerate((1135, 1054, 1146), start=1):
+        x.handle(f"N/abc123/system/0/Ac/PvOnGrid/L{i}/Power", msg(w))
+    assert x.pv_w() == 3335
+
+
+def test_envoy_leads_victron_pv_is_backup(tmp_path):
+    from energymix.engine import Engine
+    from energymix.store import Store
+
+    e = Engine(Config(mqtt_host="gx", victron_portal_id="p"), None, Store(tmp_path / "t.db"))
+    for i, w in enumerate((1135, 1054, 1146), start=1):
+        e.victron.handle(f"N/p/system/0/Ac/PvOnGrid/L{i}/Power", msg(w))
+    envoy = "sensor.envoy_122252019205_power_production"
+    # Geen entity ingesteld: Envoy wordt zelf gevonden en gaat voor
+    e.ha.states = {envoy: {"state": "3400", "attributes": {"unit_of_measurement": "W"}}}
+    assert e.collect().pv_w == 3400 and e.sources["pv_w"].startswith("Envoy")
+    # Envoy weg: Victron als reserve
+    e.ha.states[envoy]["state"] = "unavailable"
+    assert e.collect().pv_w == 3335 and "Envoy niet beschikbaar" in e.sources["pv_w"]
