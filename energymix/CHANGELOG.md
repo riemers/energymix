@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.2.17
+- "Accu bewaren" gaat nu in blokken van minstens een uur, en liever één lang blok dan een paar losse:
+  geen losse kwartiertjes meer verspreid over de nacht
+- Uitleg bij bewaren laat de echte winst per kWh zien
+
 ## 0.2.16
 - Accu laadt sneller als er ruimte is: in een goedkoop laad-kwartier mag de regelaar tot DVCC max als
   de fases het toelaten (was: nooit boven de geplande stroom)

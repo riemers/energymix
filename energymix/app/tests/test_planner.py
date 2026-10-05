@@ -392,3 +392,27 @@ def test_evening_plugin_waits_for_cheaper_day_tomorrow():
     fast = [s.start.astimezone(TZ).hour for s in plan.slots if s.zappi_mode == "Fast"]
     assert all(h >= 22 or h < 7 for h in fast) and len(fast) == 2
     assert "'s nachts" in next(s for s in plan.slots if s.zappi_mode == "Fast").reasons["zappi"]
+
+
+def test_hold_in_blocks_not_scattered_quarters():
+    # Nacht net iets goedkoper met kleine verschillen per kwartier, dure avond, geen zon:
+    # bewaren mag, maar alleen in blokken van minstens een uur
+    import random
+
+    rnd = random.Random(3)
+    night = [0.30 + rnd.random() * 0.03 for _ in range(28)]  # 00:00-07:00
+    day = [0.60] * 16 + [0.33] * 52  # 07:00-24:00, duur 07-11u
+    prices = quarters(at(0), night + day)
+    plan = make_plan(
+        cfg(house_load_default_w=1500, grid_charge_enabled=False), prices, State(soc=40), at(0, 5)
+    )
+    held = [s.dvcc_current == 0 and s.ess_state == ESS_KEEP_CHARGED for s in plan.slots]
+    assert any(held)
+    runs, cur = [], 0
+    for h in held + [False]:
+        if h:
+            cur += 1
+        elif cur:
+            runs.append(cur)
+            cur = 0
+    assert min(runs) >= 4, runs

@@ -85,6 +85,9 @@ verliezen. Vult de zon de accu toch al, dan laadt hij niet. Bij een negatieve pr
 **Bewaren.** In een goedkoop uur kan het voordeliger zijn om het huis van het net te laten draaien
 en de accu te sparen voor de dure avond (vooral in de winter, als de nacht goedkoop is). Energymix
 zet de accu dan op "keep batteries charged" met laadstroom 0: niet laden, niet ontladen.
+Dat gebeurt alleen als de accu anders vóór dat dure moment leeg (10%) raakt, met de zonprognose
+voor vandaag en morgen erbij. Bewaren gaat altijd in blokken van minstens een uur, bij voorkeur één
+aaneengesloten blok, zodat de Victron niet per kwartier wisselt.
 
 **Laadstroom-regelaar (per fase).** Als de accu van het net laadt, kijkt een snelle regeling elke
 30 s **per fase** hoeveel ruimte er is:
