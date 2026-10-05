@@ -57,6 +57,24 @@ export default function Sessions({ plan, tz, live }: { plan: Plan; tz: string; l
             )}
           </div>
         )}
+        {car.window_options.length > 0 && (
+          <div className="mb-2 grid grid-cols-2 gap-1.5 text-[11px]">
+            {car.window_options.map((o) => {
+              const chosen = plan.car_sessions.some((c) => c.mode === "Fast" && Date.parse(c.start) <= Date.parse(o.start) + 60_000 && Date.parse(o.start) < Date.parse(c.end));
+              return (
+                <div key={o.kind} className={`rounded-lg px-2.5 py-1.5 ${chosen ? "bg-pink-400/10 ring-1 ring-pink-400/40" : "bg-white/[0.03]"}`}>
+                  <div className="flex items-center justify-between">
+                    <span className="text-slate-400">{o.kind === "night" ? "'s Nachts" : "Overdag"}</span>
+                    {chosen && <span className="text-pink-300">gekozen</span>}
+                  </div>
+                  <div className="text-slate-200">
+                    {relDay(o.start, tz)} – {time(o.end, tz)} · gem. {eur(o.avg_price, 3)}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
         {car.name && car.need_km > 0.5 && car.eco_reason && (
           <div className={`mb-2 rounded-lg px-3 py-1.5 text-[11px] ${car.eco_km > 0.5 ? "bg-violet-400/10 text-violet-200" : "bg-white/[0.03] text-slate-500"}`}>
             {car.eco_km > 0.5 ? `Ochtend-eco vandaag: ~${Math.round(car.eco_km)} km uit accu/zon. ` : "Geen ochtend-eco: "}

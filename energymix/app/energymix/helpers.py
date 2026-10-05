@@ -32,6 +32,18 @@ class Helper:
     label: str
 
 
+CHARGE_WINDOW_OPTIONS = {
+    "Automatisch (goedkoopst)": "auto",
+    "'s Nachts (22-07)": "night",
+    "Overdag (07-19)": "day",
+}
+OPTIONS_BY_KEY = {"season_mode": SEASON_OPTIONS, "car_window": CHARGE_WINDOW_OPTIONS}
+
+
+def _window(s: str) -> str | None:
+    return CHARGE_WINDOW_OPTIONS.get(s)
+
+
 def _bool(s: str) -> bool:
     return s == "on"
 
@@ -88,7 +100,13 @@ HELPERS: list[Helper] = [
         "input_datetime.energymix_auto_klaar_om", "car_ready_time",
         {"type": "input_datetime/create", "name": "Energymix auto klaar om", "has_date": False, "has_time": True,
          "icon": "mdi:clock-check", "initial": "07:30:00"},
-        _time, "Vannacht: auto vol om",
+        _time, "Vol vóór (als 'vannacht' aan staat)",
+    ),
+    Helper(
+        "input_select.energymix_laadmoment", "car_window",
+        {"type": "input_select/create", "name": "Energymix laadmoment", "options": list(CHARGE_WINDOW_OPTIONS),
+         "icon": "mdi:clock-time-four-outline", "initial": "Automatisch (goedkoopst)"},
+        _window, "Laadmoment auto",
     ),
     Helper(
         "input_select.energymix_seizoen", "season_mode",
@@ -148,5 +166,6 @@ async def set_helper(ha: HomeAssistant, key: str, value: Any) -> None:
     elif domain == "input_datetime":
         await ha.call_service(domain, "set_datetime", h.entity_id, {"time": f"{str(value)[:5]}:00"})
     elif domain == "input_select":
-        option = next((k for k, v in SEASON_OPTIONS.items() if v == value), value)
+        opts = OPTIONS_BY_KEY.get(key, {})
+        option = next((k for k, v in opts.items() if v == value), value)
         await ha.call_service(domain, "select_option", h.entity_id, {"option": option})

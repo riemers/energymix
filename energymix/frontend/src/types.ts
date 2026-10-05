@@ -65,6 +65,8 @@ export interface CarPlan {
   speed_kmh: number | null;
   speed_source: string;
   time_source: string;
+  window_mode: string;
+  window_options: { kind: "night" | "day"; start: string; end: string; avg_price: number }[];
 }
 
 export interface Season {
@@ -184,6 +186,7 @@ export interface Status {
   actions: Action[];
   live: Live;
   today: Today;
+  state: { vannacht: boolean } | null;
 }
 
 export interface Today {

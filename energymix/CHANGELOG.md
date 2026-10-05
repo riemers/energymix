@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.2.15
+- Laadplan vergelijkt het goedkoopste blok 's nachts (22-07) met overdag (07-19), binnen de bekende
+  prijzen, en laat zien welke gekozen is. Na ±13:00 telt morgen mee: hang je 's avonds een auto aan en
+  is morgenmiddag goedkoper, dan wacht hij tot morgen
+- Nieuwe keuze "Laadmoment" (`input_select.energymix_laadmoment`): Automatisch (goedkoopst),
+  's Nachts of Overdag
+- "Vol vóór" geldt alleen met de schakelaar "vannacht"; dat staat er nu bij
+
 ## 0.2.14
 - Prijsbalken in de Tibber-kleuren per kwartier (zeer goedkoop → zeer duur), ook in de tooltip en bij "Prijs nu"
 - Minigrafiek rechtsboven vervangen door "Vandaag": verbruik, zon, auto, accu (netto +/−) en net in kWh
