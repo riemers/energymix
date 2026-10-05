@@ -86,6 +86,8 @@ export interface Live {
   phase_a: (number | null)[];
   phase_max_a: number;
   victron_phases: number[];
+  sources: Record<string, string>;
+  victron_connected: boolean;
   regulator: {
     current_a: number | null;
     target_a: number | null;
@@ -175,6 +177,8 @@ export interface SettingField {
   value: string | number | boolean;
   state: string | null;
   unit: string | null;
+  suggestion: { entity_id: string; state: string; unit: string | null } | null;
+  fallback: { label: string; active: boolean } | null;
 }
 
 export interface Settings {

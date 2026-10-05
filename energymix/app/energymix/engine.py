@@ -56,6 +56,7 @@ class Engine:
         self._helpers_checked = False
         self._wake = asyncio.Event()
         self._last_sample = 0.0
+        self.sources: dict[str, str] = {}
         self.ha.on_change(self._on_ha_change)
 
     @property
@@ -110,10 +111,28 @@ class Engine:
             unit = str(self.ha.attributes(eid).get("unit_of_measurement", "")).lower() if eid else ""
             if unit == "kw" and getattr(st, attr) is not None:
                 setattr(st, attr, getattr(st, attr) * 1000)
-        # Stroom per fase (A); sensoren mogen W, kW of A zijn
+        # Stroom per fase (A); sensoren mogen W, kW of A zijn. Geen sensoren: Victron MQTT.
+        self.sources = {}
         phase_ents = [c.grid_l1_entity, c.grid_l2_entity, c.grid_l3_entity][: max(1, c.grid_phases)]
         if any(phase_ents):
             st.phase_a = [self._phase_current(eid) for eid in phase_ents]
+            self.sources["phases"] = "HA"
+        else:
+            vw = self.victron.grid_phase_w()[: max(1, c.grid_phases)]
+            if any(x is not None for x in vw):
+                st.phase_a = [x / c.grid_voltage if x is not None else None for x in vw]
+                self.sources["phases"] = "Victron MQTT"
+        if st.grid_w is None:
+            vw = self.victron.grid_phase_w()
+            if any(x is not None for x in vw):
+                st.grid_w = sum(x for x in vw if x is not None)
+                self.sources["grid_w"] = "Victron MQTT"
+        if st.battery_w is None and self.victron.battery_w() is not None:
+            st.battery_w = self.victron.battery_w()
+            self.sources["battery_w"] = "Victron MQTT"
+        if st.soc is None and self.victron.soc() is not None:
+            st.soc = self.victron.soc()
+            self.sources["soc"] = "Victron MQTT"
         if st.house_w is None and st.grid_w is not None:
             st.house_w = (st.pv_w or 0) + st.grid_w - (st.battery_w or 0) - (st.zappi_w or 0)
         return st
@@ -175,10 +194,19 @@ class Engine:
             await helpers.ensure_helpers(self.ha)
             await asyncio.sleep(1)
         self.helper_values = helpers.read_helpers(self.ha)
-        self.cfg = helpers.apply_overrides(self.base_cfg, self.helper_values)
+        self.cfg = self.effective(helpers.apply_overrides(self.base_cfg, self.helper_values))
         self.master = self.helper_values.get("master", True)
         self.executor.cfg = self.cfg
         self.regulator.cfg = self.cfg
+
+    def effective(self, cfg: Config) -> Config:
+        """Vul "auto"-waarden in met wat de installatie zelf meldt."""
+        from dataclasses import replace
+
+        if str(cfg.victron_phases).strip().lower() == "auto":
+            n = self.victron.vebus_phases() or 1
+            cfg = replace(cfg, victron_phases=",".join(str(i) for i in range(1, n + 1)))
+        return cfg
 
     # ------------------------------------------------------------ cyclus
     async def cycle(self) -> None:
@@ -213,6 +241,12 @@ class Engine:
         """Elke paar seconden: live toestand, regelaar en metingen."""
         if not self.ha.connected.is_set():
             return
+        # Aantal fases van de Multi's komt pas binnen na de eerste MQTT-berichten
+        if str(self.base_cfg.victron_phases).strip().lower() == "auto":
+            eff = self.effective(helpers.apply_overrides(self.base_cfg, self.helper_values))
+            if eff.victron_phases != self.cfg.victron_phases:
+                log.info("Victron laadt op fase(s) %s (uit de Multi's)", eff.victron_phases)
+                self.cfg = self.executor.cfg = self.regulator.cfg = eff
         self.state = self.collect()
         now = time.time()
         if now - self._last_sample >= SAMPLE_SECONDS:
@@ -230,6 +264,7 @@ class Engine:
 
     async def run(self) -> None:
         asyncio.create_task(self.ha.run())
+        asyncio.create_task(self.victron.run())
         asyncio.create_task(self._fast_loop())
         try:
             await asyncio.wait_for(self.ha.connected.wait(), 20)
@@ -312,5 +347,7 @@ class Engine:
             "phase_a": [round(x, 1) if x is not None else None for x in st.phase_a],
             "phase_max_a": self.cfg.grid_phase_max_a,
             "victron_phases": [p + 1 for p in victron_phase_idx(self.cfg)],
+            "sources": self.sources,
+            "victron_connected": self.victron.connected,
             "regulator": reg,
         }

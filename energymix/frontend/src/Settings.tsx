@@ -102,7 +102,29 @@ function FieldRow({ f, value, onChange }: { f: SettingField; value: string | num
     <div>
       <label className="mb-1 block text-xs text-slate-400">{f.label}</label>
       {f.kind === "entity" ? (
-        <EntityPicker value={String(value ?? "")} current={f} onChange={onChange} />
+        <>
+          <EntityPicker value={String(value ?? "")} current={f} onChange={onChange} />
+          {!value && f.suggestion && (
+            <div className="mt-1.5 flex items-center gap-2 rounded-lg bg-emerald-400/[0.06] px-2.5 py-1.5 text-[11px]">
+              <span className="text-emerald-300/90">Gevonden:</span>
+              <span className="min-w-0 flex-1 truncate text-slate-300">{f.suggestion.entity_id}</span>
+              <span className="shrink-0 text-slate-500">
+                {f.suggestion.state}
+                {f.suggestion.unit ? ` ${f.suggestion.unit}` : ""}
+              </span>
+              <button type="button" onClick={() => onChange(f.suggestion!.entity_id)}
+                className="shrink-0 rounded-md bg-emerald-500/20 px-2 py-0.5 font-medium text-emerald-200 hover:bg-emerald-500/30">
+                gebruik
+              </button>
+            </div>
+          )}
+          {!value && f.fallback && (
+            <div className={`mt-1 text-[11px] ${f.fallback.active ? "text-sky-300/80" : "text-slate-500"}`}>
+              {f.fallback.active ? "✓ " : ""}leeg laten = {f.fallback.label}
+              {!f.fallback.active && " (nog geen data)"}
+            </div>
+          )}
+        </>
       ) : f.kind.startsWith("select:") ? (
         <select value={String(value)} onChange={(e) => onChange(e.target.value)}
           className="w-full rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm outline-none focus:border-emerald-400/50">
@@ -113,8 +135,11 @@ function FieldRow({ f, value, onChange }: { f: SettingField; value: string | num
           ))}
         </select>
       ) : f.kind === "text" ? (
-        <input type="text" value={String(value)} onChange={(e) => onChange(e.target.value)}
-          className="w-full rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm outline-none focus:border-emerald-400/50" />
+        <>
+          <input type="text" value={String(value)} onChange={(e) => onChange(e.target.value)}
+            className="w-full rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm outline-none focus:border-emerald-400/50" />
+          {f.fallback && <div className="mt-1 text-[11px] text-sky-300/80">✓ {f.fallback.label}</div>}
+        </>
       ) : (
         <input type="number" step="any" value={String(value)} onChange={(e) => onChange(Number(e.target.value))}
           className="w-full rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm tabular-nums outline-none focus:border-emerald-400/50" />
