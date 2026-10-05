@@ -26,6 +26,7 @@ from statistics import mean
 from zoneinfo import ZoneInfo
 
 from .config import Config
+from .phases import battery_ac_limit_w, expected_others_a
 from .prices import PriceSlot
 
 ESS_KEEP_CHARGED = 9  # Victron BatteryLife state: "Keep batteries charged"
@@ -76,6 +77,7 @@ class State:
     # live vermogens (W)
     pv_w: float | None = None
     grid_w: float | None = None
+    phase_a: list[float | None] = field(default_factory=list)  # gemeten stroom per fase
     battery_w: float | None = None
     house_w: float | None = None
     zappi_w: float | None = None
@@ -484,8 +486,8 @@ def _plan_battery(cfg, tz, now, slots, plans: list[SlotPlan], state: State, fc: 
         h = _hours(sp)
         car_w = sp.car_kwh / h * 1000 if h else 0
         house_w = sp.house_kwh / h * 1000 if h else 0
-        headroom = cfg.grid_max_import_w - cfg.grid_margin_w - car_w - house_w
-        charge_cap.append(max(0.0, min(charge_w, headroom)) / 1000 * h)
+        ac_limit = battery_ac_limit_w(cfg, expected_others_a(cfg, house_w, car_w))
+        charge_cap.append(max(0.0, min(charge_w, ac_limit * eff_c)) / 1000 * h)
     max_e = [cap if sp.price < 0 else target_e for sp in plans]
     export_cap = [
         (cfg.export_max_w / 1000 * _hours(sp)) if (cfg.export_enabled and sp.car_kwh <= EPS and sp.zappi_mode != "Fast") else 0.0
@@ -517,6 +519,7 @@ def _plan_battery(cfg, tz, now, slots, plans: list[SlotPlan], state: State, fc: 
 
     gc = [0.0] * n
     ex = [0.0] * n
+    hold = [False] * n  # accu niet ontladen: huis van het net (bewaren voor later)
     spill = [min(sp.sell_price, sl.energy if sl.energy is not None else sp.price - cfg.energy_tax_eur)
              for sp, sl in zip(plans, slots)]
 
@@ -537,10 +540,13 @@ def _plan_battery(cfg, tz, now, slots, plans: list[SlotPlan], state: State, fc: 
                 exp += net - ch
             else:
                 need = -net
-                avail = max(0.0, (e - floor_e) * eff_d)
-                dis = min(need, avail)
-                e -= dis / eff_d
-                imp += need - dis
+                if hold[i] or gc[i] > EPS:
+                    imp += need  # accu bewaart (of laadt): huis van het net
+                else:
+                    avail = max(0.0, (e - floor_e) * eff_d)
+                    dis = min(need, avail)
+                    e -= dis / eff_d
+                    imp += need - dis
             g = min(gc[i], max(0.0, (max_e[i] - e) / eff_c), max(0.0, charge_cap[i] - used))
             e += g * eff_c
             imp += g
@@ -565,6 +571,7 @@ def _plan_battery(cfg, tz, now, slots, plans: list[SlotPlan], state: State, fc: 
     cur_total = base_total
     charge_why: dict[int, str] = {}
     export_why: dict[int, str] = {}
+    hold_why: dict[int, str] = {}
 
     step_charge = [min(charge_cap[i], charge_w / 1000 * _hours(plans[i])) for i in range(n)]
     # Alleen zinvolle kandidaten proberen: laden in de goedkoopste helft, leveren in de duurste
@@ -591,6 +598,19 @@ def _plan_battery(cfg, tz, now, slots, plans: list[SlotPlan], state: State, fc: 
                     threshold = 0.0 if sp.price < 0 else cfg.arbitrage_min_spread
                     if per_kwh > threshold and (best is None or per_kwh > best[0]):
                         best = (per_kwh, "gc", i, delta, sim)
+        for i in charge_idx:
+            # Bewaren: in een goedkoop slot het huis van het net, accu sparen
+            sp = plans[i]
+            if not hold[i] and gc[i] <= EPS and sp.house_kwh + eco[i] > sp.pv_kwh + EPS:
+                hold[i] = True
+                sim = simulate()
+                hold[i] = False
+                gain = cur_total - total(sim)
+                applied = sim.imp[i] - cur.imp[i]
+                if applied > EPS:
+                    per_kwh = gain / applied
+                    if per_kwh > cfg.arbitrage_min_spread and (best is None or per_kwh > best[0]):
+                        best = (per_kwh, "hold", i, 0.0, sim)
         for i in export_idx:
             # Terugleveren
             if ex[i] < export_cap[i] - EPS:
@@ -610,13 +630,19 @@ def _plan_battery(cfg, tz, now, slots, plans: list[SlotPlan], state: State, fc: 
         # Waar zit het effect? Bij laden: het slot dat het meest goedkoper wordt;
         # bij leveren: het slot dat duurder wordt (daar wordt later bijgekocht)
         diffs = [(cur.cost[j] - sim.cost[j], j) for j in range(n) if j != i]
-        if kind == "gc":
+        if kind in ("gc", "hold"):
             _, j = max(diffs) if diffs else (0, i)
         else:
             d, j = min(diffs) if diffs else (0, i)
             if d > -EPS:
                 j = None
-        if kind == "gc":
+        if kind == "hold":
+            hold[i] = True
+            hold_why[i] = (
+                f"accu bewaren: huis nu van het net (€{plans[i].price:.3f}), accu dekt om {_fmt(plans[j].start, tz, now)} "
+                f"(€{plans[j].price:.3f}): +€{per_kwh:.2f}/kWh"
+            )
+        elif kind == "gc":
             gc[i] += delta
             if plans[i].price < 0:
                 charge_why[i] = f"negatieve prijs €{plans[i].price:.4f}: accu laden"
@@ -654,6 +680,12 @@ def _plan_battery(cfg, tz, now, slots, plans: list[SlotPlan], state: State, fc: 
             sp.reasons["dvcc"] = f"{g:.1f} kWh in dit slot: {sp.dvcc_current} A" + (
                 " (beperkt: auto laadt)" if sp.car_kwh > EPS else ""
             )
+        elif hold[i]:
+            # "Keep batteries charged" met laadstroom 0: niet laden, niet ontladen
+            sp.ess_state = ESS_KEEP_CHARGED
+            sp.dvcc_current = 0
+            sp.reasons["ess"] = hold_why.get(i, "accu bewaren voor later")
+            sp.reasons["dvcc"] = "0 A: accu bewaren (niet van het net laden)"
         else:
             sp.ess_state = ESS_OPTIMIZED
             sp.dvcc_current = cfg.dvcc_max_charge_current
@@ -679,6 +711,7 @@ def _plan_battery(cfg, tz, now, slots, plans: list[SlotPlan], state: State, fc: 
             "baseline_cost_eur": round(base_total + base.terminal_e * terminal_value, 2),
             "saving_eur": round(base_total - cur_total, 2),
             "grid_charge_kwh": round(sum(min(gc[i], cur.imp[i]) for i in range(n)), 1),
+            "hold_slots": sum(1 for i in range(n) if hold[i]),
             "export_kwh": round(sum(ex[i] for i in range(n) if cur.exp[i] > EPS), 1),
             "soc_end": round(cur.terminal_e / cap * 100, 1),
             "soc_min": round(cur.soc_e[lowest] / cap * 100, 1) if lowest is not None else None,

@@ -1,5 +1,5 @@
 name: Energymix
-version: "0.2.0"
+version: "0.2.1"
 slug: energymix
 description: Energieplanner op basis van Tibber-prijzen voor Victron, zonnepanelen en Zappi
 url: https://github.com/riemers/energymix
@@ -84,6 +84,15 @@ schema:
       range_entity: str
       kwh_per_km: float?
   has_battery: bool?
+  grid_phases: int(1,3)?
+  grid_phase_max_a: float?
+  grid_phase_margin_a: float?
+  grid_voltage: float?
+  grid_l1_entity: str?
+  grid_l2_entity: str?
+  grid_l3_entity: str?
+  victron_phases: str?
+  zappi_phases: int(1,3)?
   grid_max_import_w: int?
   grid_margin_w: int?
   zappi_max_w: int?

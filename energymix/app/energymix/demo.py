@@ -48,6 +48,9 @@ async def main() -> None:
         grid_power_entity="sensor.grid_power",
         battery_power_entity="sensor.battery_power",
         zappi_power_entity="sensor.zappi_power",
+        grid_l1_entity="sensor.grid_l1",
+        grid_l2_entity="sensor.grid_l2",
+        grid_l3_entity="sensor.grid_l3",
         cars=[
             Car("Witte Koets", 385, "binary_sensor.wk_cable", "device_tracker.wk", "sensor.wk_range"),
             Car("iTesla", 313, "binary_sensor.it_cable", "device_tracker.it", "sensor.it_range"),
@@ -95,6 +98,9 @@ async def main() -> None:
             "sensor.grid_power": "-300",
             "sensor.battery_power": "2800",
             "sensor.zappi_power": "0",
+            "sensor.grid_l1": "3",
+            "sensor.grid_l2": "14",
+            "sensor.grid_l3": "2",
             "zone.home": "zoning",
             "input_boolean.energymix_aansturen": "off",
             "input_boolean.energymix_terugleveren": "on",
@@ -112,6 +118,8 @@ async def main() -> None:
                 engine.ha.states[h.entity_id]["attributes"] = {k: h.create.get(k) for k in ("min", "max", "step")}
         for eid in ("sensor.pv_power", "sensor.grid_power", "sensor.battery_power", "sensor.zappi_power"):
             engine.ha.states[eid]["attributes"] = {"unit_of_measurement": "W"}
+        for eid in ("sensor.grid_l1", "sensor.grid_l2", "sensor.grid_l3"):
+            engine.ha.states[eid]["attributes"] = {"unit_of_measurement": "A"}
         engine.ha.connected.set()
         engine.prices = fake_prices(tz)
         engine.prices_fetched = float("inf")
@@ -139,6 +147,11 @@ async def main() -> None:
                 s["sensor.battery_power"]["state"] = f"{batt:.0f}"
                 zw = float(s["sensor.zappi_power"]["state"])
                 s["sensor.grid_power"]["state"] = f"{house + batt + zw - pv:.0f}"
+                # Victron op L1, oven op L2, auto over 3 fases
+                base = (house - pv) / 3 / 230
+                s["sensor.grid_l1"]["state"] = f"{base + max(batt, 0) / 230 + zw / 3 / 230:.1f}"
+                s["sensor.grid_l2"]["state"] = f"{base + 13 + random.uniform(-0.5, 0.5) + zw / 3 / 230:.1f}"
+                s["sensor.grid_l3"]["state"] = f"{base + 1.5 + zw / 3 / 230:.1f}"
                 await asyncio.sleep(3)
 
         asyncio.create_task(wiggle())

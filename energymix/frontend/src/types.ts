@@ -83,7 +83,18 @@ export interface Live {
   zappi_plug: string;
   cars: LiveCar[];
   price: number | null;
-  regulator: { current_a: number | null; target_a: number | null; headroom_w: number | null; car_throttled: boolean; reason: string };
+  phase_a: (number | null)[];
+  phase_max_a: number;
+  victron_phases: number[];
+  regulator: {
+    current_a: number | null;
+    target_a: number | null;
+    headroom_w: number | null;
+    car_throttled: boolean;
+    phase_free_a: number[];
+    basis: string;
+    reason: string;
+  };
 }
 
 export interface Action {

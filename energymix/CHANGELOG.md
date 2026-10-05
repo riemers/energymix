@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.2.1
+- Rekenen per fase (3x25A): de krapste fase waar de Victron op laadt bepaalt de laadstroom van de
+  accu; fasesensoren instelbaar (W, kW of A), met fasebalken in het dashboard
+- Geen ruimte op een fase: laadstroom 0 in plaats van het minimum
+- Nieuwe actie "bewaren": in goedkope uren huis van het net en accu sparen voor de dure uren
+
 ## 0.2.0
 - Nieuwe planner: simuleert het accuniveau per kwartier (zon, huis, auto) en laadt/levert alleen
   als het na verliezen echt iets oplevert; reden per slot ("bespaart om 19:00 …")

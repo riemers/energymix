@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { getDecisions, getLive, getStats, getStatus, replan } from "./api";
 import Controls from "./Controls";
 import Flow from "./Flow";
+import Phases from "./Phases";
 import { COMPONENTS, dayTime, eur, priceColor, relDay, time, valueLabel, watt } from "./format";
 import { ICONS, Refresh } from "./icons";
 import Settings from "./Settings";
@@ -148,13 +149,16 @@ function Overview({ status, live, onStatus }: { status: Status; live: Live; onSt
           <div className="grid flex-1 place-items-center">
             <Flow live={live} />
           </div>
-          {reg.headroom_w !== null && (
-            <div className="mt-2 flex flex-wrap items-center gap-2 rounded-xl bg-white/[0.03] px-3 py-2 text-xs text-slate-400">
-              <span className="text-slate-300">Laadstroom accu {reg.current_a} A</span>
-              <span>· ruimte op aansluiting {watt(reg.headroom_w)}</span>
-              {reg.car_throttled && <Badge tone="pink">Zappi regelt terug: auto gaat voor</Badge>}
-            </div>
-          )}
+          <div className="mt-3 space-y-2 rounded-xl bg-white/[0.03] px-3 py-3">
+            <Phases live={live} />
+            {reg.headroom_w !== null && (
+              <div className="flex flex-wrap items-center gap-2 border-t border-white/5 pt-2 text-xs text-slate-400">
+                <span className="text-slate-300">Accu laadt met {reg.current_a} A</span>
+                <span>· nog {watt(reg.headroom_w)} ruimte voor de accu</span>
+                {reg.car_throttled && <Badge tone="pink">Zappi regelt terug: auto gaat voor</Badge>}
+              </div>
+            )}
+          </div>
         </Card>
 
         <div className="space-y-4 lg:col-span-5">
@@ -282,7 +286,9 @@ function ActionCard({ a }: { a: Action }) {
         </span>
       </div>
       <div className="mt-2 flex items-baseline gap-2">
-        <span className="text-lg font-semibold">{valueLabel(a.component, a.desired)}</span>
+        <span className="text-lg font-semibold">
+          {a.component === "ess" && a.reason.startsWith("accu bewaren") ? "Bewaren" : valueLabel(a.component, a.desired)}
+        </span>
         {differs && <span className="text-xs text-amber-300">nu: {valueLabel(a.component, a.actual)}</span>}
       </div>
       <p className="mt-0.5 text-xs leading-relaxed text-slate-400">{a.reason}</p>
