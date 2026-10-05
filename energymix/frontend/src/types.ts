@@ -18,7 +18,30 @@ export interface SlotPlan {
   grid_charge_kwh: number;
   export_kwh: number;
   import_kwh: number;
+  car_range_km: number | null;
   reasons: Reasons;
+}
+
+export interface CarSession {
+  mode: "Fast" | "Eco";
+  kinds: string[];
+  start: string;
+  end: string;
+  kwh: number;
+  cost: number;
+  avg_price: number | null;
+  range_start_km: number | null;
+  range_end_km: number | null;
+  reason: string;
+}
+
+export interface BatterySession {
+  kind: "charge" | "hold" | "export";
+  start: string;
+  end: string;
+  kwh: number;
+  soc_end: number | null;
+  reason: string;
 }
 
 export interface CarPlan {
@@ -29,6 +52,8 @@ export interface CarPlan {
   planned_kwh: number;
   deadline: string | null;
   full_at: string | null;
+  max_range_km: number | null;
+  kwh_per_km: number;
 }
 
 export interface Season {
@@ -59,6 +84,8 @@ export interface Plan {
   season: Season;
   summary: Summary;
   notes: string[];
+  car_sessions: CarSession[];
+  battery_sessions: BatterySession[];
   slots: SlotPlan[];
 }
 

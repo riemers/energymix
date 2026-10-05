@@ -24,8 +24,12 @@ def zappi_phase_idx(cfg: Config) -> list[int]:
 
 
 def headroom_a(cfg: Config, others_a: list[float]) -> list[float]:
-    """Vrije stroom per fase (A) gegeven wat er al op elke fase loopt."""
-    return [cfg.grid_phase_max_a - cfg.grid_phase_margin_a - a for a in others_a]
+    """Vrije stroom per fase (A) gegeven wat er al op elke fase loopt.
+
+    Teruglevering (negatieve stroom, bv. zon) telt NIET als extra ruimte: een
+    wolk en die ruimte is weg. Het maximum is dus altijd zekering - marge.
+    """
+    return [cfg.grid_phase_max_a - cfg.grid_phase_margin_a - max(0.0, a) for a in others_a]
 
 
 def battery_ac_limit_w(cfg: Config, others_a: list[float]) -> float:

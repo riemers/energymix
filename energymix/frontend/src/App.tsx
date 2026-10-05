@@ -7,6 +7,7 @@ import { COMPONENTS, dayTime, eur, priceColor, relDay, time, valueLabel, watt } 
 import { ICONS, Refresh } from "./icons";
 import Settings from "./Settings";
 import Stats from "./Stats";
+import Sessions from "./Sessions";
 import Timeline from "./Timeline";
 import { Badge, Card } from "./ui";
 import type { Action, Decision, Live, Stats as StatsT, Status } from "./types";
@@ -182,6 +183,7 @@ function Overview({ status, live, onStatus }: { status: Status; live: Live; onSt
         >
           <Timeline plan={plan} tz={tz} cheap={status.cheap_price} fast={status.force_fast_price}
             target={status.battery_target_soc} reserve={status.battery_reserve_soc} />
+          <Sessions plan={plan} tz={tz} />
           {!!plan.notes.length && (
             <ul className="mt-3 space-y-1 text-xs text-amber-200/80">
               {plan.notes.map((n) => <li key={n}>• {n}</li>)}

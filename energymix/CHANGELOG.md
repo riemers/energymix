@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.2.5
+- Veiligheid: teruglevering (zon) telt niet meer als extra ruimte op een fase; maximaal altijd
+  zekering - marge (bv. 23 A), ook als de panelen veel leveren
+- Planning: laadsessies van de auto als balken ("Fast 12:00–14:30") en accu-acties
+  (laden / bewaren / terug), plus een lijst met van–tot, modus, kWh, gemiddelde prijs en
+  actieradius voor en na
+- Kortere tooltip: prijs, accu %, auto km en één reden
+
 ## 0.2.4
 - Kies zelf welke accumonitor de SoC levert (standaard de actieve monitor van de GX, bv. de Lynx);
   Instellingen tonen alle accu's die de GX kent met naam, SoC en vermogen

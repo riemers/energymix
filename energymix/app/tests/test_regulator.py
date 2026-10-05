@@ -115,3 +115,10 @@ def test_helpers_override_config():
                     "car_ready_time": "06:45", "season_mode": "night"}
     c = apply_overrides(Config(), vals)
     assert c.export_enabled and c.battery_target_soc == 90 and c.car_min_range_km == 250
+
+
+def test_solar_export_never_counts_as_extra_room():
+    from energymix.phases import headroom_a
+
+    # L1 levert 6.8 A terug door de zon: toch maximaal 25 - 2 = 23 A vrij
+    assert headroom_a(cfg(), [-6.8, 5, 0]) == [23, 18, 23]
