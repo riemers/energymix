@@ -139,6 +139,8 @@ function PlanFacts({ plan, tz }: { plan: Plan | null; tz: string }) {
     ["Van net laden (gepland)", s.grid_charge_kwh !== undefined ? `${s.grid_charge_kwh} kWh` : "–"],
     ["Terugleveren (gepland)", s.export_kwh !== undefined ? `${s.export_kwh} kWh` : "–"],
     ["Laagste verwachte stand", s.soc_min !== undefined && s.soc_min_at ? `${s.soc_min}% om ${relDay(s.soc_min_at, tz)}` : "–"],
+    ["Verwacht huis / zon (24 u)", s.house_kwh_24h !== undefined ? `${s.house_kwh_24h} kWh / ${s.pv_kwh_24h ?? 0} kWh` : "–"],
+    ["Accu leeg (zonder sturing)", s.empty_at ? relDay(s.empty_at, tz) : "niet binnen de planning"],
     ["Accu op doel", s.target_reached_at ? relDay(s.target_reached_at, tz) : "niet binnen de planning"],
     ["Kosten planning", s.cost_eur !== undefined ? `${eur(s.cost_eur, 2)} (zonder sturing ${eur(s.baseline_cost_eur ?? 0, 2)})` : "–"],
   ];

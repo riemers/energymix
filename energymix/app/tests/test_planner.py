@@ -416,3 +416,13 @@ def test_hold_in_blocks_not_scattered_quarters():
             runs.append(cur)
             cur = 0
     assert min(runs) >= 4, runs
+
+
+def test_no_night_hold_when_battery_easily_lasts():
+    # Accu 84% van 47 kWh, huis 600 W, wat zon morgen, dure avond: gewoon de accu gebruiken
+    prices = quarters(at(22, day=5), [0.32] * 8 + [0.30] * 28 + [0.33] * 44 + [0.61] * 16 + [0.33] * 8)
+    pv = {s.start: (1.0 if 10 <= s.start.astimezone(TZ).hour < 16 else 0.0) for s in prices}
+    plan = make_plan(cfg(house_load_default_w=600, grid_charge_enabled=False), prices, State(soc=84), at(22, 5, day=5),
+                     Forecast(pv_kwh=pv))
+    assert not any(s.dvcc_current == 0 and s.ess_state == ESS_KEEP_CHARGED for s in plan.slots)
+    assert plan.summary["empty_at"] is None

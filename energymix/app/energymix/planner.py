@@ -335,6 +335,8 @@ def make_plan(
     summary: dict = {}
     if cfg.has_battery and state.soc is not None:
         summary = _plan_battery(cfg, tz, now, slots, plans, state, fc, season, car)
+        if summary.get("hold_slots") and summary.get("empty_why"):
+            notes.append(f"Accu bewaren: {summary['empty_why']}")
     elif cfg.has_battery:
         notes.append("Accu-SoC onbekend: accu niet gepland")
 
@@ -810,6 +812,17 @@ def _plan_battery(cfg, tz, now, slots, plans: list[SlotPlan], state: State, fc: 
 
     base = simulate()
     base_total = total(base)
+    # Wanneer raakt de accu leeg als we niets doen? En waarom (verbruik vs zon tot dan)?
+    empty_idx = next((i for i in range(n) if base.soc_e[i] <= floor_e + 0.05 and plans[i].house_kwh > plans[i].pv_kwh), None)
+    upto = empty_idx + 1 if empty_idx is not None else n
+    why_empty = ""
+    if empty_idx is not None:
+        why_empty = (
+            f"; zonder bewaren is de accu om {_fmt(plans[empty_idx].start, tz, now)} op {floor_e / cap * 100:.0f}% "
+            f"(tot dan huis {sum(p.house_kwh for p in plans[:upto]):.0f} kWh"
+            + (f", auto eco {sum(eco[:upto]):.0f} kWh" if sum(eco[:upto]) > 0.5 else "")
+            + f", zon {sum(p.pv_kwh for p in plans[:upto]):.0f} kWh)"
+        )
     cur = base
     cur_total = base_total
     charge_why: dict[int, str] = {}
@@ -906,7 +919,7 @@ def _plan_battery(cfg, tz, now, slots, plans: list[SlotPlan], state: State, fc: 
                 hold[k] = True
                 hold_why[k] = (
                     f"accu bewaren: huis nu van het net (€{plans[k].price:.3f}), accu dekt om {_fmt(plans[j].start, tz, now)} "
-                    f"(€{plans[j].price:.3f}): +€{per_kwh:.2f}/kWh"
+                    f"(€{plans[j].price:.3f}): +€{per_kwh:.2f}/kWh{why_empty}"
                 )
         elif kind == "gc":
             gc[i] += delta
@@ -1008,6 +1021,10 @@ def _plan_battery(cfg, tz, now, slots, plans: list[SlotPlan], state: State, fc: 
             "soc_end": round(cur.terminal_e / cap * 100, 1),
             "soc_min": round(cur.soc_e[lowest] / cap * 100, 1) if lowest is not None else None,
             "soc_min_at": plans[lowest].start.isoformat() if lowest is not None else None,
+            "empty_at": plans[empty_idx].start.isoformat() if empty_idx is not None else None,
+            "empty_why": why_empty.lstrip("; "),
+            "house_kwh_24h": round(sum(p.house_kwh for p in plans if p.start < now + timedelta(hours=24)), 1),
+            "pv_kwh_24h": round(sum(p.pv_kwh for p in plans if p.start < now + timedelta(hours=24)), 1),
         }
         full = next((plans[i].end for i in range(n) if cur.soc_e[i] >= target_e - 0.2), None)
         summary["target_reached_at"] = full.isoformat() if full else None
