@@ -51,6 +51,11 @@ def create_app(engine: Engine) -> web.Application:
     app.router.add_get("/api/decisions", decisions)
     app.router.add_post("/api/replan", replan)
     app.router.add_get("/", index)
+
+    async def icon(_req: web.Request) -> web.StreamResponse:
+        return web.FileResponse(STATIC / "icon.png")
+
+    app.router.add_get("/icon.png", icon)
     if (STATIC / "assets").exists():
         app.router.add_static("/assets", STATIC / "assets")
     return app
