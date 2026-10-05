@@ -332,3 +332,21 @@ def test_boost_fast_now_until_full_even_if_expensive():
     assert h[11].zappi_mode == "Eco+" and h[12].zappi_mode == "Eco+"  # vol: niet nog eens goedkoop laden
     assert plan.car.full_at == at(10, 30)
     assert plan.car.sessions[0]["kinds"] == ["snel"]
+
+
+def test_uses_learned_max_and_car_time_to_full_while_charging():
+    prices = hourly(at(0), [0.30] * 8 + [0.20] * 4 + [0.10] * 4 + [0.30] * 8)
+    cs = CarState("Auto A", 400, cable="on", location="home", range_km="200", kwh_per_km=0.2,
+                  learned_max_km=330, time_to_full_min=None)
+    st = State(zappi_plug="EV Connected", carcharger_mode="auto", cars=[cs])
+    plan = make_plan(cfg(), prices, st, at(8))
+    assert plan.car.max_range_km == 330 and plan.car.need_km == 130  # geleerd i.p.v. 400
+    # Laadt al op Fast en de auto zegt "nog 1u": dat gaat voor de berekende 2u
+    cs.time_to_full_min = 60
+    st = State(zappi_plug="EV Connected", zappi_mode="Fast", zappi_status="Charging",
+               carcharger_mode="auto", cars=[cs])
+    plan = make_plan(cfg(), prices, st, at(8))
+    assert plan.car.time_source == "auto" and plan.car.need_minutes == 60
+    fast = [s for s in plan.slots if s.zappi_mode == "Fast"]
+    assert sum((s.end - max(s.start, at(8))).total_seconds() for s in fast) == 3600
+    assert "volgens de auto" in fast[0].reasons["zappi"]

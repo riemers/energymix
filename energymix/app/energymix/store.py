@@ -18,6 +18,7 @@ CREATE TABLE IF NOT EXISTS decisions (
     ts TEXT, component TEXT, value TEXT, previous TEXT, reason TEXT, executed INTEGER
 );
 CREATE INDEX IF NOT EXISTS decisions_ts ON decisions (ts);
+CREATE TABLE IF NOT EXISTS car_learned (name TEXT PRIMARY KEY, data TEXT, updated TEXT);
 CREATE TABLE IF NOT EXISTS samples (
     ts TEXT PRIMARY KEY, soc REAL, pv_w REAL, grid_w REAL, battery_w REAL, house_w REAL, zappi_w REAL, price REAL
 );
@@ -132,3 +133,15 @@ class Store:
             "learned_charge_w": round(learned) if learned else None,
             "samples": len(rows),
         }
+
+    # ------------------------------------------------------------- auto's
+    def get_car_learned(self, name: str) -> dict | None:
+        row = self.db.execute("SELECT data FROM car_learned WHERE name = ?", (name,)).fetchone()
+        return json.loads(row["data"]) if row else None
+
+    def save_car_learned(self, name: str, data: dict) -> None:
+        self.db.execute(
+            "INSERT OR REPLACE INTO car_learned VALUES (?,?,?)",
+            (name, json.dumps(data), datetime.now(timezone.utc).isoformat()),
+        )
+        self.db.commit()

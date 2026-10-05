@@ -13,6 +13,7 @@ import aiohttp
 
 from . import helpers
 from .config import Config
+from .carlearn import CarLearner, discover, parse_time_to_full
 from .discovery import suggest
 from .executor import Executor
 from .forecast import house_per_slot, pv_per_slot
@@ -44,6 +45,8 @@ class Engine:
         )
         self.executor = Executor(cfg, self.ha, self.victron, store)
         self.regulator = Regulator(cfg)
+        self.learner = CarLearner(store)
+        self.car_entities: dict[str, dict[str, str]] = {}
         self.prices: list[PriceSlot] = []
         self.prices_fetched = 0.0
         self.plan: Plan | None = None
@@ -115,6 +118,7 @@ class Engine:
             unit = str(self.ha.attributes(eid).get("unit_of_measurement", "")).lower() if eid else ""
             if unit == "kw" and getattr(st, attr) is not None:
                 setattr(st, attr, getattr(st, attr) * 1000)
+        self._car_details(st)
         # Stroom per fase (A); sensoren mogen W, kW of A zijn. Geen sensoren: Victron MQTT.
         self.sources = {}
         phase_ents = [c.grid_l1_entity, c.grid_l2_entity, c.grid_l3_entity][: max(1, c.grid_phases)]
@@ -161,6 +165,36 @@ class Engine:
         if st.house_w is None and st.grid_w is not None:
             st.house_w = (st.pv_w or 0) + st.grid_w - (st.battery_w or 0) - (st.zappi_w or 0)
         return st
+
+    def _car_details(self, st: State) -> None:
+        """Tesla-gegevens per auto (accu %, laadlimiet, tijd tot vol, laadsnelheid) + leren."""
+        now_dt = datetime.now(timezone.utc)
+        fast = st.zappi_mode == "Fast" and st.zappi_charging and (
+            st.zappi_w is None or st.zappi_w >= self.cfg.zappi_max_w * 0.8
+        )
+        complete = st.car_full
+        self.car_entities = {}
+        for car_cfg, cs in zip(self.cfg.cars, st.cars):
+            ents = discover(self.ha.states, car_cfg)
+            self.car_entities[car_cfg.name] = ents
+            num = self.ha.number
+            cs.soc = num(ents["battery_level"]) if "battery_level" in ents else None
+            cs.charge_limit = num(ents["charge_limit"]) if "charge_limit" in ents else None
+            if "time_to_full" in ents:
+                cs.time_to_full_min = parse_time_to_full(
+                    self.ha.state(ents["time_to_full"]), self.ha.attributes(ents["time_to_full"]), now_dt
+                )
+            if "charge_rate" in ents:
+                rate = num(ents["charge_rate"])
+                unit = str(self.ha.attributes(ents["charge_rate"]).get("unit_of_measurement", "")).lower()
+                cs.charge_rate_kmh = rate * 1.609 if rate is not None and "mi" in unit else rate
+            plugged_here = cs.connected and cs.home
+            lr = self.learner.update(
+                car_cfg.name, cs.range_value, cs.soc, cs.charge_limit, cs.charge_rate_kmh,
+                charging_fast=fast and plugged_here, complete=complete and plugged_here,
+            )
+            cs.learned_max_km = round(lr.max_range_km) if lr.max_range_km else None
+            cs.learned_speed_kmh = round(lr.speed_kmh, 1) if lr.speed_kmh and lr.speed_n >= 2 else None
 
     def _watts(self, eid: str) -> float | None:
         val = self.ha.number(eid)
@@ -405,8 +439,11 @@ class Engine:
         cars = []
         for car, cs in zip(self.cfg.cars, st.cars):
             cars.append({
-                "name": car.name, "range_km": cs.range_value, "max_range_km": car.max_range_km,
-                "connected": cs.connected, "home": cs.home,
+                "name": car.name, "range_km": cs.range_value, "max_range_km": cs.max_km,
+                "configured_max_km": car.max_range_km, "learned_max_km": cs.learned_max_km,
+                "learned_speed_kmh": cs.learned_speed_kmh, "soc": cs.soc, "charge_limit": cs.charge_limit,
+                "time_to_full_min": cs.time_to_full_min, "charge_rate_kmh": cs.charge_rate_kmh,
+                "connected": cs.connected, "home": cs.home, "entities": self.car_entities.get(car.name, {}),
             })
         cur = slot_at(self.prices, datetime.now(timezone.utc))
         reg = self.regulator.st.to_dict()

@@ -47,6 +47,16 @@ class CarState:
     location: str = ""
     range_km: str = ""
     kwh_per_km: float = 0.17
+    soc: float | None = None  # accu % van de auto
+    charge_limit: float | None = None  # laadlimiet %
+    time_to_full_min: float | None = None  # volgens de auto
+    charge_rate_kmh: float | None = None  # volgens de auto
+    learned_max_km: float | None = None
+    learned_speed_kmh: float | None = None
+
+    @property
+    def max_km(self) -> float:
+        return self.learned_max_km or self.max_range_km
 
     @property
     def connected(self) -> bool:
@@ -152,6 +162,11 @@ class CarPlan:
     eco_km: float = 0.0
     eco_reason: str = ""
     boost: bool = False
+    max_source: str = "ingesteld"
+    charge_limit: float | None = None
+    speed_kmh: float | None = None
+    speed_source: str = "ingesteld"
+    time_source: str = "berekend"
     sessions: list[dict] = field(default_factory=list)
 
     def to_dict(self) -> dict:
@@ -329,7 +344,11 @@ def make_plan(
     # Nederlandse notatie in de redenen: €0,162 i.p.v. €0.162
     for sp in plans:
         sp.reasons = {k: _nl(v) for k, v in sp.reasons.items()}
-    car.sessions = _car_sessions(plans, car, state, cfg.charge_speed_km_per_hour, cfg.zappi_max_w / 1000)
+    speed_eff = (
+        car.need_km / (car.need_minutes / 60) if car.need_minutes > 0.5 and car.need_km > 0.5
+        else (car.speed_kmh or cfg.charge_speed_km_per_hour)
+    )
+    car.sessions = _car_sessions(plans, car, state, speed_eff, cfg.zappi_max_w / 1000)
     return Plan(now, plans, car, season, summary, [_nl(n) for n in notes], _battery_sessions(plans))
 
 
@@ -467,9 +486,20 @@ def _plan_car(cfg, tz, now, slots, plans, state: State, notes, season: dict | No
         rng = active.range_value or 0.0
         cp.name, cp.range_km = active.name, rng
         kpk = active.kwh_per_km or 0.17
-        cp.max_range_km, cp.kwh_per_km = active.max_range_km, kpk
-        cp.need_km = max(0.0, active.max_range_km - rng)
+        cp.max_range_km, cp.kwh_per_km = active.max_km, kpk
+        cp.max_source = "geleerd" if active.learned_max_km else "ingesteld"
+        cp.charge_limit = active.charge_limit
+        if active.learned_speed_kmh:
+            speed = active.learned_speed_kmh
+            cp.speed_source = "gemeten"
+        cp.speed_kmh = speed
+        cp.need_km = max(0.0, active.max_km - rng)
         cp.need_minutes = min(720.0, cp.need_km / speed * 60)
+        # Laadt hij al op Fast? Dan weet de auto zelf het best hoe lang het nog duurt
+        if (active.time_to_full_min is not None and state.zappi_mode == "Fast" and state.zappi_charging
+                and cp.need_km > 0.5):
+            cp.need_minutes = min(720.0, active.time_to_full_min)
+            cp.time_source = "auto"
     else:
         cp.need_minutes = float(cfg.default_charge_minutes)
         cp.need_km = cp.need_minutes / 60 * speed
@@ -523,7 +553,7 @@ def _plan_car(cfg, tz, now, slots, plans, state: State, notes, season: dict | No
     # b. Rest in de goedkoopste uren (Fast van het net)
     cands = [sp for sp in plans if (deadline is None or sp.start < deadline) and sp.zappi_mode != "Eco"]
     rest_km = max(0.0, cp.need_km - eco_km)
-    left = rest_km / speed * 60 if cp.need_km else 0.0
+    left = (cp.need_minutes * rest_km / cp.need_km) if cp.need_km else 0.0
     chosen: dict[datetime, float] = {}  # slot -> minuten laden
     if left > 0.5:
         # Eén aaneengesloten blok (zoals Node-RED): geen losse kwartieren, geen gependel
@@ -550,7 +580,11 @@ def _plan_car(cfg, tz, now, slots, plans, state: State, notes, season: dict | No
         where = f"vóór {_fmt(deadline, tz, now)}" if deadline else "binnen de bekende prijzen"
         notes.append(f"Auto: {left:.0f} min laden past niet {where}")
 
-    need_txt = f"{rest_km:.0f} km ({_dur(rest_km / speed * 60)})" + (f", na {eco_km:.0f} km eco" if eco_km > 0.5 else "")
+    need_txt = (
+        f"{rest_km:.0f} km ({_dur(cp.need_minutes * rest_km / cp.need_km if cp.need_km else 0)}"
+        + (", volgens de auto" if cp.time_source == "auto" else "") + ")"
+        + (f", na {eco_km:.0f} km eco" if eco_km > 0.5 else "")
+    )
     for sp in plans:
         if sp.start not in chosen:
             continue

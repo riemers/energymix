@@ -1,6 +1,6 @@
 import { eur, relDay, time } from "./format";
 import { BATT_COLOR, BATT_LABEL, CAR_COLOR } from "./Timeline";
-import type { Plan } from "./types";
+import type { Live, Plan } from "./types";
 
 const KIND: Record<string, string> = {
   goedkoopst: "goedkoopste uren",
@@ -19,8 +19,9 @@ function span(start: string, end: string, tz: string) {
   return `${relDay(start, tz)} – ${time(end, tz)}`;
 }
 
-export default function Sessions({ plan, tz }: { plan: Plan; tz: string }) {
+export default function Sessions({ plan, tz, live }: { plan: Plan; tz: string; live?: Live }) {
   const car = plan.car;
+  const liveCar = live?.cars.find((c) => c.name === car.name);
   return (
     <div className="mt-4 grid gap-4 border-t border-white/5 pt-4 md:grid-cols-2">
       <div className="min-w-0">
@@ -33,6 +34,29 @@ export default function Sessions({ plan, tz }: { plan: Plan; tz: string }) {
             </span>
           )}
         </div>
+        {car.name && car.max_range_km && (
+          <div className="mb-2 flex flex-wrap gap-1.5 text-[11px]">
+            <Chip>
+              max {Math.round(car.max_range_km)} km
+              <span className="text-slate-500">
+                {" "}
+                {car.max_source === "geleerd" ? `geleerd${car.charge_limit ? ` bij ${Math.round(car.charge_limit)}%` : ""}` : "ingesteld"}
+              </span>
+            </Chip>
+            {car.speed_kmh && (
+              <Chip>
+                {Math.round(car.speed_kmh)} km/u <span className="text-slate-500">{car.speed_source}</span>
+              </Chip>
+            )}
+            {liveCar?.soc != null && <Chip>accu auto {Math.round(liveCar.soc)}%</Chip>}
+            {liveCar?.time_to_full_min != null && liveCar.time_to_full_min > 0 && (
+              <Chip tone={car.time_source === "auto" ? "pink" : undefined}>
+                auto zegt: nog {fmtMin(liveCar.time_to_full_min)}
+                {car.time_source === "auto" && <span className="text-pink-200/70"> · gebruikt</span>}
+              </Chip>
+            )}
+          </div>
+        )}
         {car.name && car.need_km > 0.5 && car.eco_reason && (
           <div className={`mb-2 rounded-lg px-3 py-1.5 text-[11px] ${car.eco_km > 0.5 ? "bg-violet-400/10 text-violet-200" : "bg-white/[0.03] text-slate-500"}`}>
             {car.eco_km > 0.5 ? `Ochtend-eco vandaag: ~${Math.round(car.eco_km)} km uit accu/zon. ` : "Geen ochtend-eco: "}
@@ -95,5 +119,13 @@ export default function Sessions({ plan, tz }: { plan: Plan; tz: string }) {
         )}
       </div>
     </div>
+  );
+}
+
+function Chip({ children, tone }: { children: React.ReactNode; tone?: "pink" }) {
+  return (
+    <span className={`rounded-md px-2 py-0.5 ${tone === "pink" ? "bg-pink-400/15 text-pink-200" : "bg-white/[0.05] text-slate-300"}`}>
+      {children}
+    </span>
   );
 }

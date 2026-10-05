@@ -59,6 +59,11 @@ export interface CarPlan {
   eco_km: number;
   eco_reason: string;
   boost: boolean;
+  max_source: string;
+  charge_limit: number | null;
+  speed_kmh: number | null;
+  speed_source: string;
+  time_source: string;
 }
 
 export interface Season {
@@ -98,8 +103,16 @@ export interface LiveCar {
   name: string;
   range_km: number | null;
   max_range_km: number;
+  configured_max_km: number;
+  learned_max_km: number | null;
+  learned_speed_kmh: number | null;
+  soc: number | null;
+  charge_limit: number | null;
+  time_to_full_min: number | null;
+  charge_rate_kmh: number | null;
   connected: boolean;
   home: boolean;
+  entities: Record<string, string>;
 }
 
 export interface Live {

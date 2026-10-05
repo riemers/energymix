@@ -134,7 +134,7 @@ export default function App() {
           <DecisionLog items={decisions} tz={tz} />
         </Card>
       )}
-      {tab === "instellingen" && <Settings onSaved={load} />}
+      {tab === "instellingen" && <Settings onSaved={load} live={live ?? status?.live} />}
     </div>
   );
 }
@@ -183,7 +183,7 @@ function Overview({ status, live, onStatus }: { status: Status; live: Live; onSt
         >
           <Timeline plan={plan} tz={tz} cheap={status.cheap_price} fast={status.force_fast_price}
             target={status.battery_target_soc} reserve={status.battery_reserve_soc} />
-          <Sessions plan={plan} tz={tz} />
+          <Sessions plan={plan} tz={tz} live={live} />
           {!!plan.notes.length && (
             <ul className="mt-3 space-y-1 text-xs text-amber-200/80">
               {plan.notes.map((n) => <li key={n}>• {n}</li>)}

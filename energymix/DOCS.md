@@ -59,6 +59,13 @@ Die wordt ingepland als één aaneengesloten blok op het goedkoopste moment binn
 Staat `vannacht` aan, dan moet de auto vol zijn vóór "Vannacht: auto vol om"
 (`input_datetime.energymix_auto_klaar_om`).
 
+**Auto's leren.** Energymix leest per auto het accu % en de laadlimiet van de Tesla (zoekt zelf
+`sensor.<auto>_battery_level`, `number.<auto>_charge_limit`, `sensor.<auto>_time_to_full_charge` en
+`sensor.<auto>_charge_rate`). Daaruit leert hij de max actieradius bij de laadlimiet en de echte
+laadsnelheid, en die gebruikt hij in plaats van de ingestelde waarden. Laadt de auto op Fast, dan
+gebruikt de planning de "tijd tot vol" die de auto zelf opgeeft. Andere namen? Vul ze in bij `cars`
+(`battery_level_entity`, `charge_limit_entity`, `time_to_full_entity`, `charge_rate_entity`).
+
 **Ochtend-eco.** Is de accu al behoorlijk vol (`eco_battery_soc_min`, standaard 60%) én wordt het
 een echte zonnedag (`eco_solar_min`, standaard 35 kWh volgens de prognose voor vandaag), dan laadt
 de auto 's ochtends (5–12u) op Eco, met de Victron op all loads zodat de accu meehelpt. Wat dat
