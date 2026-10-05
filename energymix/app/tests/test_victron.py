@@ -37,3 +37,14 @@ def test_victron_phases_parsing():
     assert victron_phase_idx(Config(victron_phases="1,2,3")) == [0, 1, 2]
     assert victron_phase_idx(Config(victron_phases="2")) == [1]
     assert victron_phase_idx(Config(victron_phases="auto")) == [0]  # pas na MQTT ingevuld
+
+
+def test_engine_prefers_victron_soc_over_stale_ha_sensor(tmp_path):
+    from energymix.engine import Engine
+    from energymix.store import Store
+
+    e = Engine(Config(mqtt_host="gx", victron_portal_id="p"), None, Store(tmp_path / "t.db"))
+    e.ha.states = {"sensor.victron_battery_soc": {"state": "70.0", "attributes": {}}}
+    assert e.collect().soc == 70.0 and e.sources["soc"] == "HA"
+    e.victron.handle("N/p/system/0/Dc/Battery/Soc", msg(49.5))
+    assert e.collect().soc == 49.5 and e.sources["soc"] == "Victron MQTT"

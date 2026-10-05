@@ -179,6 +179,7 @@ export interface SettingField {
   unit: string | null;
   suggestion: { entity_id: string; state: string; unit: string | null } | null;
   fallback: { label: string; active: boolean } | null;
+  age_s: number | null;
 }
 
 export interface Settings {
