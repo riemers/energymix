@@ -78,7 +78,9 @@ laadstroom. Zet iemand op één fase de oven aan, dan krijgt de accu op die fase
 - regelt de Zappi zichzelf terug (Fast, maar minder dan `zappi_max_w * 0,85`), dan telt het tekort
   per fase als bezet. De auto gaat voor en de accu neemt die ruimte niet in.
 
-Stel onder Instellingen → Net de sensoren per fase in (`grid_l1_entity` t/m `grid_l3_entity`, in W,
+Zonder fasesensoren in HA leest Energymix het netvermogen per fase en het accuvermogen rechtstreeks
+van de Victron GX via MQTT (`N/<portal>/system/0/Ac/Grid/L1..L3/Power`), en het aantal fases van de
+Multi's (`victron_phases: auto`). Je kunt ook eigen sensoren kiezen onder Instellingen → Net (`grid_l1_entity` t/m `grid_l3_entity`, in W,
 kW of A, positief = afname). Zonder fasesensoren neemt de regelaar aan dat het verbruik gelijk over de
 fases verdeeld is. Dat is minder veilig, dus stel ze in voordat je `dvcc` live zet.
 

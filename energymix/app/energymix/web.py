@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from dataclasses import asdict
 from pathlib import Path
 
@@ -32,7 +33,7 @@ EDITABLE = [
     ("grid_l3_entity", "Fase L3 (W of A)", "entity", "Net"),
     ("grid_phase_max_a", "Zekering per fase (A)", "number", "Net"),
     ("grid_phase_margin_a", "Marge per fase (A)", "number", "Net"),
-    ("victron_phases", "Victron laadt op fase(s), bv. 1 of 1,2,3", "text", "Net"),
+    ("victron_phases", "Victron laadt op fase(s): auto, 1 of 1,2,3", "text", "Net"),
     ("zappi_phases", "Zappi fases (1 of 3)", "number", "Auto"),
     ("export_max_w", "Max terugleveren (W)", "number", "Net"),
     ("export_price", "Terugleverprijs", "select:total,energy", "Net"),
@@ -46,6 +47,41 @@ EDITABLE = [
     ("export_min_spread", "Min. winst terugleveren (€/kWh)", "number", "Strategie"),
     ("roundtrip_efficiency", "Rendement accu heen en terug", "number", "Strategie"),
 ]
+
+
+# Bekende namen van entities uit veelgebruikte integraties, voor suggesties
+SUGGEST = {
+    "pv_power_entity": [r"^sensor\.envoy_.*_current_power_production$", r"^sensor\.envoy_.*_power_production$"],
+    "zappi_power_entity": [r"^sensor\..*zappi.*power_ct_internal_load$", r"^sensor\..*zappi.*internal_load$",
+                           r"^sensor\..*zappi.*charge_power$"],
+    "zappi_plug_entity": [r"^sensor\..*zappi.*plug_status$"],
+    "zappi_status_entity": [r"^sensor\..*zappi.*_status$"],
+    "zappi_mode_entity": [r"^select\..*zappi.*charge_mode$"],
+    "pv_switch_entity": [r"^switch\.envoy_.*_production$"],
+    "solar_remaining_entity": [r"^sensor\.energy_production_today_remaining.*$"],
+    "solar_tomorrow_entity": [r"^sensor\.energy_production_tomorrow.*$"],
+}
+# Wat er gebruikt wordt als een entity leeg blijft
+FALLBACK = {
+    "grid_power_entity": ("grid_w", "som van de fases via Victron MQTT"),
+    "battery_power_entity": ("battery_w", "Victron MQTT"),
+    "grid_l1_entity": ("phases", "Victron MQTT"),
+    "grid_l2_entity": ("phases", "Victron MQTT"),
+    "grid_l3_entity": ("phases", "Victron MQTT"),
+    "house_power_entity": (None, "berekend: zon + net - accu - Zappi"),
+}
+
+
+EXCLUDE = {"zappi_status_entity": "plug_status"}
+
+
+def suggest(states: dict, key: str) -> str | None:
+    for pattern in SUGGEST.get(key, []):
+        rx = re.compile(pattern)
+        hits = sorted(e for e in states if rx.match(e) and not (EXCLUDE.get(key) and EXCLUDE[key] in e))
+        if hits:
+            return hits[0]
+    return None
 
 
 def create_app(engine: Engine) -> web.Application:
@@ -116,12 +152,25 @@ def create_app(engine: Engine) -> web.Application:
 
     async def get_settings(_req: web.Request) -> web.Response:
         cfg = engine.base_cfg
-        fields = [
-            {"key": k, "label": label, "kind": kind, "group": group, "value": getattr(cfg, k),
-             "state": engine.ha.state(getattr(cfg, k)) if kind == "entity" and getattr(cfg, k) else None,
-             "unit": engine.ha.attributes(getattr(cfg, k)).get("unit_of_measurement") if kind == "entity" and getattr(cfg, k) else None}
-            for k, label, kind, group in EDITABLE
-        ]
+        fields = []
+        for k, label, kind, group in EDITABLE:
+            val = getattr(cfg, k)
+            f = {"key": k, "label": label, "kind": kind, "group": group, "value": val,
+                 "state": engine.ha.state(val) if kind == "entity" and val else None,
+                 "unit": engine.ha.attributes(val).get("unit_of_measurement") if kind == "entity" and val else None,
+                 "suggestion": None, "fallback": None}
+            if kind == "entity" and not val:
+                sug = suggest(engine.ha.states, k)
+                if sug:
+                    f["suggestion"] = {"entity_id": sug, "state": engine.ha.state(sug),
+                                       "unit": engine.ha.attributes(sug).get("unit_of_measurement")}
+                if k in FALLBACK:
+                    src_key, label_fb = FALLBACK[k]
+                    active = src_key is None or src_key in engine.sources
+                    f["fallback"] = {"label": label_fb, "active": active}
+            if k == "victron_phases" and str(val).strip().lower() == "auto":
+                f["fallback"] = {"label": f"nu: fase {engine.cfg.victron_phases} (uit de Multi's)", "active": True}
+            fields.append(f)
         return web.json_response({"fields": fields, "control": asdict(cfg.control), "cars": [asdict(c) for c in cfg.cars]})
 
     async def post_settings(req: web.Request) -> web.Response:
@@ -129,7 +178,7 @@ def create_app(engine: Engine) -> web.Application:
         allowed = {k for k, *_ in EDITABLE}
         changes = {k: v for k, v in (body or {}).items() if k in allowed}
         engine.base_cfg.update(changes)
-        engine.cfg = helpers.apply_overrides(engine.base_cfg, engine.helper_values)
+        engine.cfg = engine.effective(helpers.apply_overrides(engine.base_cfg, engine.helper_values))
         await engine.cycle()
         return await get_settings(req)
 

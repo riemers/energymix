@@ -92,7 +92,7 @@ class Config:
     grid_l1_entity: str = ""  # vermogen (W/kW) of stroom (A) per fase, positief = afname
     grid_l2_entity: str = ""
     grid_l3_entity: str = ""
-    victron_phases: str = "1"  # fase(s) waarop de Victron laadt, bv. "1" of "1,2,3"
+    victron_phases: str = "auto"  # fase(s) waarop de Victron laadt: "auto" (uit de Multi's), "1" of "1,2,3"
     zappi_phases: int = 3
     # Oud (v0.2.0), niet meer gebruikt: per fase rekenen vervangt dit
     grid_max_import_w: float = 17000

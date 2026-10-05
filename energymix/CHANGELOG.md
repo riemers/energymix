@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.2.2
+- Live waarden rechtstreeks van de Victron GX via MQTT: netvermogen per fase, accuvermogen, SoC.
+  Gebruikt als de HA-entity leeg is (geen extra sensoren nodig)
+- Victron-fases automatisch uit de Multi's (`victron_phases: auto`)
+- Instellingen: suggesties voor bekende entities (Envoy, myenergi) met knop "gebruik",
+  en per leeg veld wat er in plaats daarvan gebruikt wordt
+
 ## 0.2.1
 - Rekenen per fase (3x25A): de krapste fase waar de Victron op laadt bepaalt de laadstroom van de
   accu; fasesensoren instelbaar (W, kW of A), met fasebalken in het dashboard

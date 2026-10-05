@@ -12,6 +12,7 @@ export default function Phases({ live }: { live: Live }) {
     );
   }
   return (
+    <div>
     <div className="grid grid-cols-3 gap-3">
       {live.phase_a.map((a, i) => {
         const pct = a === null ? 0 : Math.max(0, Math.min(100, (a / max) * 100));
@@ -38,6 +39,8 @@ export default function Phases({ live }: { live: Live }) {
           </div>
         );
       })}
+    </div>
+    {live.sources?.phases && <div className="mt-1.5 text-[10px] text-slate-600">fases via {live.sources.phases}</div>}
     </div>
   );
 }
