@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.2.16
+- Accu laadt sneller als er ruimte is: in een goedkoop laad-kwartier mag de regelaar tot DVCC max als
+  de fases het toelaten (was: nooit boven de geplande stroom)
+- Omhoog regelen met de helft van het verschil i.p.v. 10 A per 2 minuten; omlaag blijft direct
+- Planner rekent de zonprognose mee in de ruimte per fase (zon levert terug op dezelfde fases)
+
 ## 0.2.15
 - Laadplan vergelijkt het goedkoopste blok 's nachts (22-07) met overdag (07-19), binnen de bekende
   prijzen, en laat zien welke gekozen is. Na ±13:00 telt morgen mee: hang je 's avonds een auto aan en

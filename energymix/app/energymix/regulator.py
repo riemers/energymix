@@ -120,7 +120,10 @@ class Regulator:
 
         step = max(1, cfg.dvcc_step_a)
         possible_a = max(0.0, headroom) / v
-        target = int(min(plan_a, possible_a) // step * step)
+        # In een goedkoop laad-kwartier mag het sneller dan gepland als de fases het toelaten:
+        # zelfde prijs, alleen eerder vol. Het plan rekent met een schatting; dit is gemeten.
+        ceiling = max(plan_a, cfg.dvcc_max_charge_current)
+        target = int(min(ceiling, possible_a) // step * step)
         if possible_a < cfg.dvcc_min_charge_current:
             target = 0  # fase vol: niet laden, ook niet op het minimum
         else:
@@ -141,7 +144,9 @@ class Regulator:
             if st.raise_since is None:
                 st.raise_since = now
             if now - st.raise_since >= RAISE_AFTER:
-                new = cur + step  # rustig omhoog, één stap per keer
+                # Omhoog met de helft van het verschil (minstens één stap): snel maar niet in één klap
+                half = max(step, int((target - cur) / 2 // step * step))
+                new = min(target, cur + half)
                 st.raise_since = now
                 why = f"omhoog: {why}"
             else:
@@ -151,5 +156,5 @@ class Regulator:
             new = cur
             st.raise_since = None
         st.current_a = new
-        st.reason = f"{new} A (plan {plan_a} A), {why}"
+        st.reason = f"{new} A (plan {plan_a} A, max {ceiling} A), {why}"
         return new, st.reason

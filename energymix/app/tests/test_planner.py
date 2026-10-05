@@ -117,6 +117,15 @@ def test_export_disabled_by_default():
     assert all((s.setpoint_w or 0) >= 0 for s in plan.slots)
 
 
+def test_solar_gives_room_for_battery_next_to_car():
+    from energymix.phases import battery_ac_limit_w, expected_others_a
+
+    c = cfg(victron_phases="1,2,3")
+    without = battery_ac_limit_w(c, expected_others_a(c, 900, 11400))
+    with_sun = battery_ac_limit_w(c, expected_others_a(c, 900, 11400, 5800))
+    assert with_sun - without > 5000  # 5.8 kW zon = ~8 A per fase extra ruimte
+
+
 def test_battery_charge_limited_by_grid_when_car_charges():
     prices = hourly(at(0), [0.02] * 4 + [0.45] * 20)
     c = cfg(grid_max_import_w=17000, grid_margin_w=1500, zappi_max_w=11000, house_load_default_w=500)
