@@ -357,6 +357,8 @@ def make_plan(
 
 ECO_KW = 3.7  # geschat laadvermogen op Eco (zon/accu)
 MIN_EXPORT_KWH = 0.5  # minder terugleveren in een slot is de moeite niet
+HOLD_MIN_MINUTES = 60  # bewaren altijd in blokken van minstens een uur, geen losse kwartiertjes
+HOLD_STICKY_EUR = 0.03  # liever een bewaar-blok verlengen dan een los blok erbij
 
 
 def _car_sessions(plans: list[SlotPlan], car: CarPlan, state: State, speed: float = 65.0, fast_kw: float = 11.0) -> list[dict]:
@@ -823,6 +825,16 @@ def _plan_battery(cfg, tz, now, slots, plans: list[SlotPlan], state: State, fc: 
     # Tijdens ochtend-eco levert de accu aan de auto: dan niet bewaren of van het net laden
     charge_idx = [i for i in range(n) if (plans[i].price <= cheap_limit or plans[i].price < 0) and eco[i] <= EPS]
     export_idx = [i for i in range(n) if export_cap[i] > EPS and plans[i].sell_price >= sell_limit]
+    hold_ok = set(i for i in charge_idx if plans[i].house_kwh > plans[i].pv_kwh + EPS)
+    hold_blocks: list[list[int]] = []
+    for i in range(n):
+        block, j = [], i
+        while j < n and j in hold_ok and (not block or plans[j].start == plans[block[-1]].end):
+            block.append(j)
+            if (plans[j].end - plans[i].start).total_seconds() >= HOLD_MIN_MINUTES * 60:
+                hold_blocks.append(block)
+                break
+            j += 1
     for _ in range(300):
         best = None
         for i in charge_idx:
@@ -839,20 +851,30 @@ def _plan_battery(cfg, tz, now, slots, plans: list[SlotPlan], state: State, fc: 
                     per_kwh = gain / applied
                     threshold = 0.0 if sp.price < 0 else cfg.arbitrage_min_spread
                     if per_kwh > threshold and (best is None or per_kwh > best[0]):
-                        best = (per_kwh, "gc", i, delta, sim)
-        for i in charge_idx:
-            # Bewaren: in een goedkoop slot het huis van het net, accu sparen
-            sp = plans[i]
-            if not hold[i] and gc[i] <= EPS and sp.house_kwh + eco[i] > sp.pv_kwh + EPS:
-                hold[i] = True
-                sim = simulate()
-                hold[i] = False
-                gain = cur_total - total(sim)
-                applied = sim.imp[i] - cur.imp[i]
-                if applied > EPS:
-                    per_kwh = gain / applied
-                    if per_kwh > cfg.arbitrage_min_spread and (best is None or per_kwh > best[0]):
-                        best = (per_kwh, "hold", i, 0.0, sim)
+                        best = (per_kwh, "gc", i, delta, sim, per_kwh)
+        for block in hold_blocks:
+            # Bewaren: een heel blok (min. een uur) het huis van het net, accu sparen.
+            # Per blok i.p.v. per kwartier, anders kiest hij losse goedkope kwartiertjes.
+            new_slots = [k for k in block if not hold[k]]
+            if not new_slots or any(gc[k] > EPS for k in block):
+                continue
+            for k in new_slots:
+                hold[k] = True
+            sim = simulate()
+            for k in new_slots:
+                hold[k] = False
+            gain = cur_total - total(sim)
+            applied = sum(sim.imp[k] - cur.imp[k] for k in new_slots)
+            if applied > EPS:
+                per_kwh = gain / applied
+                # Sluit het aan op een blok dat al bewaart, dan liever dat verlengen:
+                # één lang blok i.p.v. een paar losse (scheelt geschakel)
+                touches = (block[0] > 0 and hold[block[0] - 1]) or (block[-1] + 1 < n and hold[block[-1] + 1]) or any(
+                    hold[k] for k in block
+                )
+                rank = per_kwh + (HOLD_STICKY_EUR if touches else 0.0)
+                if per_kwh > cfg.arbitrage_min_spread and (best is None or rank > best[0]):
+                    best = (rank, "hold", new_slots, 0.0, sim, per_kwh)
         for i in export_idx:
             # Terugleveren
             if ex[i] < export_cap[i] - EPS:
@@ -865,13 +887,14 @@ def _plan_battery(cfg, tz, now, slots, plans: list[SlotPlan], state: State, fc: 
                 if applied > EPS:
                     per_kwh = gain / applied
                     if per_kwh > cfg.export_min_spread and (best is None or per_kwh > best[0]):
-                        best = (per_kwh, "ex", i, delta, sim)
+                        best = (per_kwh, "ex", i, delta, sim, per_kwh)
         if best is None:
             break
-        per_kwh, kind, i, delta, sim = best
+        _, kind, i, delta, sim, per_kwh = best
         # Waar zit het effect? Bij laden: het slot dat het meest goedkoper wordt;
         # bij leveren: het slot dat duurder wordt (daar wordt later bijgekocht)
-        diffs = [(cur.cost[j] - sim.cost[j], j) for j in range(n) if j != i]
+        held = i if kind == "hold" else [i]
+        diffs = [(cur.cost[j] - sim.cost[j], j) for j in range(n) if j not in held]
         if kind in ("gc", "hold"):
             _, j = max(diffs) if diffs else (0, i)
         else:
@@ -879,11 +902,12 @@ def _plan_battery(cfg, tz, now, slots, plans: list[SlotPlan], state: State, fc: 
             if d > -EPS:
                 j = None
         if kind == "hold":
-            hold[i] = True
-            hold_why[i] = (
-                f"accu bewaren: huis nu van het net (€{plans[i].price:.3f}), accu dekt om {_fmt(plans[j].start, tz, now)} "
-                f"(€{plans[j].price:.3f}): +€{per_kwh:.2f}/kWh"
-            )
+            for k in held:
+                hold[k] = True
+                hold_why[k] = (
+                    f"accu bewaren: huis nu van het net (€{plans[k].price:.3f}), accu dekt om {_fmt(plans[j].start, tz, now)} "
+                    f"(€{plans[j].price:.3f}): +€{per_kwh:.2f}/kWh"
+                )
         elif kind == "gc":
             gc[i] += delta
             if plans[i].price < 0:
