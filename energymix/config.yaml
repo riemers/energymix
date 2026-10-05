@@ -1,5 +1,5 @@
 name: Energymix
-version: "0.1.3"
+version: "0.2.0"
 slug: energymix
 description: Energieplanner op basis van Tibber-prijzen voor Victron, zonnepanelen en Zappi
 url: https://github.com/riemers/energymix
@@ -46,6 +46,7 @@ options:
     dvcc: false
     zappi: false
     feed_in: false
+    setpoint: false
 
 schema:
   tibber_token: password
@@ -63,6 +64,13 @@ schema:
   vannacht_entity: str?
   battery_soc_entity: str
   solar_today_entity: str
+  solar_remaining_entity: str?
+  solar_tomorrow_entity: str?
+  pv_power_entity: str?
+  grid_power_entity: str?
+  battery_power_entity: str?
+  house_power_entity: str?
+  zappi_power_entity: str?
   sunchance_entity: str?
   pv_switch_entity: str?
   zappi_plug_entity: str?
@@ -74,7 +82,30 @@ schema:
       cable_entity: str
       location_entity: str
       range_entity: str
+      kwh_per_km: float?
   has_battery: bool?
+  grid_max_import_w: int?
+  grid_margin_w: int?
+  zappi_max_w: int?
+  export_max_w: int?
+  grid_setpoint_default_w: int?
+  roundtrip_efficiency: float(0.5,1)?
+  dvcc_step_a: int?
+  battery_target_soc: int(50,100)?
+  battery_reserve_soc: int(5,90)?
+  house_load_default_w: int?
+  arbitrage_min_spread: float?
+  export_min_spread: float?
+  export_price: list(total|energy)?
+  energy_tax_eur: float?
+  export_enabled: bool?
+  grid_charge_enabled: bool?
+  season_mode: list(auto|day|night)?
+  car_min_range_km: int?
+  car_ready_time: str?
+  car_opportunistic_price: float?
+  regulator_seconds: int(10,300)?
+  create_helpers: bool?
   battery_capacity_kwh: float
   battery_nominal_voltage: float?
   charge_efficiency: float(0.5,1)?
@@ -103,3 +134,4 @@ schema:
     dvcc: bool
     zappi: bool
     feed_in: bool
+    setpoint: bool?

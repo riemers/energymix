@@ -2,7 +2,8 @@ from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
 from energymix.config import Car, Config
-from energymix.planner import ESS_KEEP_CHARGED, ESS_OPTIMIZED, CarState, State, make_plan
+from energymix.forecast import pv_per_slot, sun_window
+from energymix.planner import ESS_KEEP_CHARGED, ESS_OPTIMIZED, CarState, Forecast, State, detect_season, make_plan
 from energymix.prices import build_slots, cheapest_window, parse_tibber
 
 TZ = ZoneInfo("Europe/Amsterdam")
@@ -14,7 +15,8 @@ def cfg(**kw) -> Config:
         zappi_mode_entity="select.zappi_mode",
         zappi_plug_entity="sensor.zappi_plug",
         zappi_status_entity="sensor.zappi_status",
-        cars=[Car("Auto A", 400, "b.cable", "d.loc", "s.range")],
+        cars=[Car("Auto A", 400, "b.cable", "d.loc", "s.range", kwh_per_km=0.2)],
+        house_load_default_w=0,
     )
     base.update(kw)
     return Config(**base)
@@ -28,104 +30,152 @@ def at(h, m=0, day=6):
     return datetime(2026, 10, day, h, m, tzinfo=TZ)
 
 
+def car(range_km="300"):
+    return [CarState("Auto A", 400, cable="on", location="home", range_km=range_km, kwh_per_km=0.2)]
+
+
+def by_hour(plan, day=6):
+    return {s.start.astimezone(TZ).hour: s for s in plan.slots if s.start.astimezone(TZ).day == day}
+
+
+# ------------------------------------------------------------------ PV
+
+
 def test_negative_price_turns_pv_off_and_charges_battery():
     prices = hourly(at(0), [0.20] * 12 + [-0.05, -0.02] + [0.20] * 10)
-    plan = make_plan(cfg(), prices, State(soc=50, solar_today_kwh=10), at(12, 5))
-    now = plan.now
-    assert now.pv_on is False
-    assert now.ess_state == ESS_KEEP_CHARGED
-    # 23.5 kWh in 2 uur / 0.93 / 52 V ≈ 243 A -> begrensd op 150
-    assert now.dvcc_current == 150
-
-
-def test_dvcc_spreads_charge_over_negative_block():
-    prices = hourly(at(0), [0.20] * 10 + [-0.01] * 6 + [0.20] * 8)
-    plan = make_plan(cfg(), prices, State(soc=90, solar_today_kwh=10), at(10, 1))
-    # 4.7 kWh / 6u / 0.93 / 52 V ≈ 16 A -> minimum 20
-    assert plan.now.dvcc_current == 20
-
-
-def test_cheap_waits_for_negative_later_today():
-    prices = hourly(at(0), [0.05] * 13 + [-0.01] + [0.2] * 10)
-    plan = make_plan(cfg(), prices, State(soc=40, solar_today_kwh=0), at(8))
-    assert plan.now.ess_state == ESS_OPTIMIZED
-    assert "wacht op negatief" in plan.now.reasons["ess"]
-
-
-def test_cheap_skips_grid_when_solar_enough():
-    prices = hourly(at(0), [0.05] * 24)
-    # nodig: 50% van 47 = 23.5 kWh, zon 30 kWh
-    plan = make_plan(cfg(), prices, State(soc=50, solar_today_kwh=30), at(3))
-    assert plan.now.ess_state == ESS_OPTIMIZED
-    plan = make_plan(cfg(), prices, State(soc=50, solar_today_kwh=10), at(3))
+    plan = make_plan(cfg(), prices, State(soc=50), at(12, 5))
+    assert plan.now.pv_on is False
     assert plan.now.ess_state == ESS_KEEP_CHARGED
+    assert "negatieve prijs" in plan.now.reasons["ess"]
 
 
-def test_lowest_price_block_when_soc_and_sun_low():
-    prices = hourly(at(0), [0.30] * 2 + [0.20] * 6 + [0.30] * 16)
-    c = cfg(lowest_price_ess_minutes=360)
-    plan = make_plan(c, prices, State(soc=20, solar_today_kwh=5), at(3))
-    assert plan.now.ess_state == ESS_KEEP_CHARGED
-    plan = make_plan(c, prices, State(soc=20, solar_today_kwh=5), at(9))
-    assert plan.now.ess_state == ESS_OPTIMIZED
+# ------------------------------------------------------------------ accu
 
 
-def car_state(range_km="300"):
-    return [CarState("Auto A", 400, cable="on", location="home", range_km=range_km)]
+def test_charges_cheap_when_used_later_at_high_price():
+    # Goedkoop 02-04u, duur 18-22u; huis verbruikt 2 kW
+    prices = hourly(at(0), [0.25, 0.25, 0.05, 0.05, 0.25] + [0.25] * 13 + [0.45] * 4 + [0.25] * 2)
+    plan = make_plan(cfg(house_load_default_w=2000), prices, State(soc=20), at(0, 30))
+    h = by_hour(plan)
+    assert h[2].ess_state == ESS_KEEP_CHARGED
+    assert "bespaart" in h[2].reasons["ess"]
+    assert h[10].ess_state == ESS_OPTIMIZED
+    assert plan.summary["saving_eur"] > 0
 
 
-def test_auto_picks_cheapest_window():
-    prices = hourly(at(0), [0.30] * 2 + [0.25, 0.20, 0.21] + [0.30] * 19)
-    st = State(soc=50, zappi_plug="EV Connected", carcharger_mode="auto", cars=car_state("300"))
-    # 100 km / 65 km/u = 92 min -> 2 slots
-    plan = make_plan(cfg(), prices, st, at(0, 30))
-    assert plan.charge_minutes == 92
-    assert plan.charge_window == (at(3), at(5))
-    by_hour = {s.start.hour: s for s in plan.slots}
-    assert by_hour[3].zappi_mode == "Fast"
-    assert by_hour[1].zappi_mode == "Eco+"
+def test_no_grid_charge_when_spread_too_small():
+    prices = hourly(at(0), [0.20] * 3 + [0.18] * 3 + [0.22] * 18)
+    plan = make_plan(cfg(house_load_default_w=1000), prices, State(soc=20), at(0, 30))
+    assert all(s.ess_state == ESS_OPTIMIZED for s in plan.slots)
 
 
-def test_force_fast_below_threshold():
-    prices = hourly(at(0), [0.14] + [0.30] * 23)
-    st = State(zappi_plug="EV Connected", carcharger_mode="auto", cars=car_state("390"))
-    plan = make_plan(cfg(), prices, st, at(0, 10))
-    assert plan.now.zappi_mode == "Fast"
+def test_no_grid_charge_when_sun_fills_battery():
+    # Goedkoop om 03u, maar overdag ruim zon die de accu toch vult
+    prices = hourly(at(0), [0.25] * 3 + [0.10] + [0.25] * 14 + [0.40] * 6)
+    pv = {s.start: (6.0 if 9 <= s.start.astimezone(TZ).hour < 16 else 0.0) for s in prices}
+    fc = Forecast(pv_kwh=pv)
+    plan = make_plan(cfg(house_load_default_w=500), prices, State(soc=60), at(0, 30), fc)
+    assert by_hour(plan)[3].ess_state == ESS_OPTIMIZED
+    # Zonder zon wél laden
+    plan = make_plan(cfg(house_load_default_w=500), prices, State(soc=60), at(0, 30))
+    assert by_hour(plan)[3].ess_state == ESS_KEEP_CHARGED
 
 
-def test_no_morning_eco_while_fast_window_still_ahead():
-    # Goedkoop venster om 10:00; om 07:00 dus geen eco maar wachten op Fast
-    prices = hourly(at(0), [0.30] * 10 + [0.20, 0.20] + [0.30] * 12)
-    st = State(
-        soc=80, solar_today_kwh=60, sunchance=70, zappi_plug="EV Connected",
-        carcharger_mode="auto", cars=car_state("300"),
-    )
-    plan = make_plan(cfg(), prices, st, at(7))
-    assert plan.charge_window == (at(10), at(12))
-    assert plan.now.zappi_mode == "Eco+"
-    assert plan.now.feed_in_disabled == 1
-    assert "wacht op Fast" in plan.now.reasons["zappi"]
+def test_grid_charge_switch_off():
+    prices = hourly(at(0), [0.25, 0.05, 0.05] + [0.45] * 21)
+    plan = make_plan(cfg(grid_charge_enabled=False, house_load_default_w=2000), prices, State(soc=20), at(0, 30))
+    assert all(s.ess_state == ESS_OPTIMIZED for s in plan.slots)
 
 
-def test_too_few_slots_falls_back_to_eco_plus():
-    st = State(zappi_plug="EV Connected", carcharger_mode="auto", cars=car_state("300"))
-    plan = make_plan(cfg(force_fast_price=0.0), hourly(at(0), [0.30] * 24), st, at(23))
-    assert plan.charge_window is None
-    assert plan.now.zappi_mode == "Eco+"
+def test_export_on_big_spread_keeps_reserve():
+    prices = hourly(at(0), [0.25] * 18 + [0.80, 0.80] + [0.30] * 4)
+    c = cfg(export_enabled=True, battery_reserve_soc=40, house_load_default_w=0)
+    plan = make_plan(c, prices, State(soc=90), at(17, 10))
+    h = by_hour(plan)
+    assert h[18].setpoint_w < 0 and h[18].feed_in_disabled == 0
+    assert "terugleveren" in h[18].reasons["setpoint"]
+    assert min(s.soc for s in plan.slots) >= 40 - 0.5
+    # Niet bij een klein verschil
+    prices = hourly(at(0), [0.25] * 18 + [0.33, 0.33] + [0.30] * 4)
+    plan = make_plan(c, prices, State(soc=90), at(17, 10))
+    assert all((s.setpoint_w or 0) >= 0 for s in plan.slots)
 
 
-def test_morning_eco_when_window_passed():
+def test_no_export_while_car_charges():
+    prices = hourly(at(0), [0.10] + [0.80] * 3 + [0.30] * 20)
+    c = cfg(export_enabled=True, house_load_default_w=0, force_fast_price=0.9)
+    st = State(soc=90, zappi_plug="EV Connected", carcharger_mode="fast", cars=car("200"))
+    plan = make_plan(c, prices, st, at(1, 5))
+    assert all((s.setpoint_w or 0) >= 0 for s in plan.slots)
+
+
+def test_export_disabled_by_default():
+    prices = hourly(at(0), [0.25] * 18 + [0.90] + [0.20] * 5)
+    plan = make_plan(cfg(), prices, State(soc=95), at(17, 10))
+    assert all((s.setpoint_w or 0) >= 0 for s in plan.slots)
+
+
+def test_battery_charge_limited_by_grid_when_car_charges():
+    prices = hourly(at(0), [0.02] * 4 + [0.45] * 20)
+    c = cfg(grid_max_import_w=17000, grid_margin_w=1500, zappi_max_w=11000, house_load_default_w=500)
+    st = State(soc=20, zappi_plug="EV Connected", carcharger_mode="auto", cars=car("100"))
+    plan = make_plan(c, prices, st, at(0, 0))
+    s = plan.now
+    assert s.zappi_mode == "Fast"
+    assert s.ess_state == ESS_KEEP_CHARGED
+    # Ruimte 17000-1500-11000-500 = 4000 W ≈ 77 A -> naar beneden op 10 A
+    assert s.dvcc_current <= 80
+
+
+# ------------------------------------------------------------------ auto
+
+
+def test_car_below_minimum_charges_cheapest_before_deadline():
+    # Om 22:00, deadline 07:30. Goedkoopste uren 03-05u.
+    prices = hourly(at(0, day=6), [0.30] * 48)
+    prices = [s if not (3 <= s.start.astimezone(TZ).hour < 5 and s.start.day == 7) else s.__class__(s.start, s.end, 0.18) for s in prices]
+    st = State(soc=50, zappi_plug="EV Connected", carcharger_mode="auto", cars=car("200"))
+    plan = make_plan(cfg(force_fast_price=0.0, car_opportunistic_price=0.0), prices, st, at(22))
+    fast = [s for s in plan.slots if s.zappi_mode == "Fast"]
+    # 50 km * 0.2 = 10 kWh = 1 uur bij 11 kW
+    assert len(fast) == 1 and fast[0].start == at(3, day=7)
+    assert "onder 250 km" in fast[0].reasons["zappi"]
+
+
+def test_car_above_minimum_only_charges_when_cheap():
+    prices = hourly(at(0), [0.30] * 10 + [0.12] * 2 + [0.30] * 12)
+    st = State(zappi_plug="EV Connected", carcharger_mode="auto", cars=car("300"))
+    plan = make_plan(cfg(force_fast_price=0.0, car_opportunistic_price=0.15), prices, st, at(8))
+    fast = [s.start.astimezone(TZ).hour for s in plan.slots if s.zappi_mode == "Fast"]
+    assert fast == [10, 11]
+    assert "goedkoop bijladen" in by_hour(plan)[10].reasons["zappi"]
+    plan = make_plan(cfg(force_fast_price=0.0, car_opportunistic_price=0.10), prices, st, at(8))
+    assert not any(s.zappi_mode == "Fast" for s in plan.slots)
+
+
+def test_vannacht_means_full_before_ready_hour():
+    prices = hourly(at(0), [0.30] * 48)
+    st = State(zappi_plug="EV Connected", carcharger_mode="auto", vannacht=True, cars=car("340"))
+    plan = make_plan(cfg(force_fast_price=0.0, car_opportunistic_price=0.0), prices, st, at(22))
+    fast = [s for s in plan.slots if s.zappi_mode == "Fast"]
+    assert fast and fast[-1].end <= at(8, day=7)
+    assert plan.car.full_at is not None
+
+
+def test_morning_eco_when_sun_refills():
     prices = hourly(at(0), [0.30] * 24)
     st = State(
-        soc=80, solar_today_kwh=60, sunchance=70, zappi_plug="EV Connected",
-        carcharger_mode="auto", cars=car_state("300"),
+        soc=80, solar_remaining_kwh=60, sunchance=70, zappi_plug="EV Connected",
+        carcharger_mode="auto", cars=car("350"),
     )
-    c = cfg(force_fast_price=0.0)
-    plan = make_plan(c, prices, st, at(7))
-    # alle prijzen gelijk -> venster is het eerste mogelijke blok (nu) -> Fast
-    assert plan.now.zappi_mode == "Fast"
-    later = [s for s in plan.slots if s.start >= plan.charge_window[1] and s.start.hour < 12]
-    assert later and all(s.zappi_mode == "Eco" and s.feed_in_disabled == 0 for s in later)
+    plan = make_plan(cfg(force_fast_price=0.0, car_opportunistic_price=0.0), prices, st, at(8))
+    assert plan.now.zappi_mode == "Eco"
+    assert plan.now.feed_in_disabled == 0
+    # Te weinig zon: geen eco
+    st.solar_remaining_kwh = 5
+    plan = make_plan(cfg(force_fast_price=0.0, car_opportunistic_price=0.0), prices, st, at(8))
+    assert plan.now.zappi_mode == "Eco+"
+    assert "zon nog" in plan.now.reasons["zappi"]
 
 
 def test_ecoa_enables_all_loads_and_no_car_means_no_zappi():
@@ -135,32 +185,38 @@ def test_ecoa_enables_all_loads_and_no_car_means_no_zappi():
     assert plan.now.feed_in_disabled == 0
 
 
-def test_vannacht_limits_window():
-    # Goedkoop om 10:00 morgen, maar met vannacht moet hij om 08:00 klaar zijn
-    prices = hourly(at(0), [0.30] * 48)
-    prices = [s if s.start != at(10, day=7) else s.__class__(s.start, s.end, 0.16) for s in prices]
-    st = State(zappi_plug="EV Connected", carcharger_mode="auto", vannacht=True, cars=car_state("340"))
-    plan = make_plan(cfg(), prices, st, at(22))
-    assert plan.charge_window[1] <= at(8, day=7)
-    st.vannacht = False
-    plan = make_plan(cfg(), prices, st, at(22))
-    assert plan.charge_window[0] == at(10, day=7)
+# ------------------------------------------------------------------ seizoen / prognose
 
 
-def test_dst_day_has_25_slots_and_correct_current_slot():
-    # 25 okt 2026: wintertijd, 25 uur
-    start = datetime(2026, 10, 25, 0, 0, tzinfo=TZ)
-    raw = []
-    t = start.astimezone(ZoneInfo("UTC"))
-    for i in range(25):
-        raw.append({"startsAt": (t + timedelta(hours=i)).astimezone(TZ).isoformat(), "total": 0.30 if i != 4 else -0.10})
+def test_season_detection():
+    summer = hourly(at(0), [0.30] * 11 + [0.10] * 5 + [0.30] * 8)
+    winter = hourly(at(0), [0.12] * 6 + [0.30] * 18)
+    assert detect_season(summer, TZ, at(23))["detected"] == "day"
+    assert detect_season(winter, TZ, at(23))["detected"] == "night"
+
+
+def test_pv_forecast_distributes_over_daylight():
+    slots = hourly(at(0), [0.2] * 48)
+    pv = pv_per_slot(slots, at(0), TZ, 20, 10, 52.1, 5.1)
+    today = {s.start.astimezone(TZ).hour: pv[s.start] for s in slots if s.start.day == 6}
+    assert abs(sum(today.values()) - 20) < 0.01
+    assert today[13] > today[9] > today[2] == 0
+    rise, set_ = sun_window(datetime(2026, 10, 6), 52.1, 5.1)
+    assert 5 < rise.hour < 7 and 16 < set_.hour < 18  # UTC
+
+
+# ------------------------------------------------------------------ prijzen
+
+
+def test_dst_day_has_25_slots():
+    start = datetime(2026, 10, 25, 0, 0, tzinfo=TZ).astimezone(ZoneInfo("UTC"))
+    raw = [{"startsAt": (start + timedelta(hours=i)).astimezone(TZ).isoformat(), "total": 0.30 if i != 4 else -0.10, "energy": 0.1}
+           for i in range(25)]
     slots = parse_tibber({"today": raw})
-    assert len(slots) == 25
-    # Slot i=4 begint om 03:00 lokale (winter)tijd, niet om 04:00
+    assert len(slots) == 25 and slots[0].energy == 0.1
     neg = next(s for s in slots if s.price < 0)
     assert neg.start.astimezone(TZ).hour == 3
-    now = neg.start + timedelta(minutes=10)
-    plan = make_plan(cfg(), slots, State(soc=50), now)
+    plan = make_plan(cfg(), slots, State(soc=50), neg.start + timedelta(minutes=10))
     assert plan.now.pv_on is False
 
 
@@ -169,3 +225,5 @@ def test_quarter_hour_prices():
     assert slots[0].minutes == 15
     w = cheapest_window(slots, 30, at(0))
     assert w[0].start == at(2) and w[-1].end == at(2, 30)
+    plan = make_plan(cfg(), slots, State(soc=50), at(1))
+    assert len(plan.slots) == 92

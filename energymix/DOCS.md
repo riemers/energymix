@@ -1,49 +1,89 @@
 # Energymix
 
-Energymix bepaalt elk kwartier wat je thuisaccu, zonnepanelen en Zappi moeten doen op basis van
-de Tibber-prijzen, en laat bij elke beslissing zien **waarom**. Het vervangt de "Tibber Strategie"
-Node-RED-flow met één planner in plaats van losse regels die elkaar overschrijven.
+Energymix plant elk kwartier wat je thuisaccu, zonnepanelen en Zappi moeten doen op basis van de
+Tibber-prijzen, je zonprognose en je verbruik. Bij elke beslissing laat hij zien **waarom**.
 
-## Shadow mode (standaard)
+## Meekijken of aansturen
 
-Zolang alles onder `control` op `false` staat, stuurt de add-on **niets** aan. Hij rekent, toont
-het plan in het dashboard en logt elke beslissing. Laat hem zo een paar dagen naast Node-RED
-draaien en vergelijk.
+Energymix stuurt pas iets aan als twee dingen allebei aan staan:
 
-Daarna neem je het per onderdeel over: zet bijvoorbeeld `control.pv: true` en schakel dezelfde
-nodes in Node-RED uit. Volgorde-advies: `pv` → `ess` + `dvcc` → `zappi` + `feed_in`.
+1. **Per onderdeel** in de add-on-configuratie, onder `control`:
 
-| Onderdeel | Wat het doet |
-|-----------|--------------|
-| `pv`      | Envoy-productie uit bij negatieve prijs (`pv_switch_entity`) |
-| `ess`     | Victron BatteryLife state 9 (accu laden) of 10 (zelfverbruik) via MQTT |
-| `dvcc`    | DVCC max laadstroom; in een negatief blok zo verdeeld dat de accu aan het eind vol is |
-| `zappi`   | Zappi-modus Fast / Eco / Eco+ (`zappi_mode_entity`) |
-| `feed_in` | Victron `Hub4/DisableFeedIn` (0 = alle loads, accu mag de auto laden) |
+   | Onderdeel  | Wat het doet |
+   |------------|--------------|
+   | `pv`       | Envoy-productie uit bij negatieve prijs (`pv_switch_entity`) |
+   | `ess`      | Victron BatteryLife state 9 (van net laden) of 10 (zelfverbruik) |
+   | `dvcc`     | Max laadstroom van de accu, met de regelaar (zie hieronder) |
+   | `setpoint` | Victron grid-setpoint: negatief = terugleveren |
+   | `zappi`    | Zappi-modus Fast / Eco / Eco+ |
+   | `feed_in`  | Victron `Hub4/DisableFeedIn` (0 = accu mag ook naar auto/net) |
 
-## Belangrijkste opties
+2. **De hoofdschakelaar** `input_boolean.energymix_aansturen` in HA (of "Aansturen" in het dashboard).
+   Daarmee zet je alles in één keer stil.
 
-- `tibber_token`: je Tibber API-token (developer.tibber.com).
-- `price_resolution`: `HOURLY` of `QUARTER_HOURLY`. De planner werkt met echte tijdstempels,
-  dus beide werken, ook op dagen met zomer-/wintertijdwissel.
-- `mqtt_host`, `victron_portal_id`, `victron_vebus_instance`: je Venus GX / Cerbo.
-- Entities: zelfde als in de Node-RED-config. Laat `zappi_*` leeg als je geen Zappi hebt,
-  en `pv_switch_entity` leeg als je geen PV wilt curtailen.
-- `cars`: per auto `name`, `max_range_km`, `cable_entity`, `location_entity`, `range_entity`.
-- `input_select.carcharger` met opties `auto`, `fast`, `slow`, `ecoa` blijft je bediening.
+Advies: begin met `pv`, dan `ess` + `dvcc`, dan `zappi` + `feed_in`, en als laatste `setpoint`.
 
-## Beslisregels
+## Helpers in Home Assistant
 
-Accu (prioriteit hoog → laag):
-1. Negatieve prijs → laden, laadstroom verdeeld over het negatieve blok.
-2. Goedkoop (< `cheap_price`) → laden, tenzij er later vandaag nog een negatieve prijs komt
-   of de zonverwachting genoeg is om de accu vol te krijgen (en de auto niet laadt).
-3. Lage SoC en weinig zon → laden in de goedkoopste `lowest_price_ess_minutes` van de dag.
-4. Anders zelfverbruik.
+Bij de eerste start maakt Energymix deze helpers aan. Je kunt ze op je eigen dashboard zetten of in
+automations gebruiken. Ze zijn hetzelfde als de schakelaars in het Energymix-dashboard.
 
-Zappi in `auto`:
-1. Prijs ≤ `force_fast_price` → Fast.
-2. Goedkoopste aaneengesloten venster voor de benodigde laadtijd (uit actieradius) → Fast.
-   Met `vannacht` aan moet het venster klaar zijn vóór `vannacht_ready_hour`.
-3. Ochtend (5–12u), genoeg zon, accu > 60% en geen Fast meer gepland → Eco vanuit de accu.
-4. Anders Eco+.
+| Helper | Betekenis |
+|--------|-----------|
+| `input_boolean.energymix_aansturen` | Hoofdschakelaar (uit = alleen meekijken) |
+| `input_boolean.energymix_terugleveren` | Terugleveren bij grote prijsverschillen |
+| `input_boolean.energymix_accu_van_net_laden` | Accu goedkoop van het net laden |
+| `input_number.energymix_accu_doel` | Accu laden tot (%) |
+| `input_number.energymix_accu_reserve` | Reserve die nooit teruggeleverd wordt (%) |
+| `input_number.energymix_auto_minimum` | Auto altijd minimaal (km) |
+| `input_datetime.energymix_auto_klaar_om` | Wanneer het minimum er moet zijn |
+| `input_select.energymix_seizoen` | Automatisch / Zomer / Winter |
+
+En deze sensoren: `sensor.energymix_status` (het verhaal), `sensor.energymix_prijs_nu`,
+`sensor.energymix_accu_modus`, `sensor.energymix_zappi_plan`, `sensor.energymix_seizoen`,
+`sensor.energymix_besparing`, `sensor.energymix_accu_vol_om`, `sensor.energymix_auto_vol_om` en
+`binary_sensor.energymix_terugleveren`.
+
+## Hoe hij beslist
+
+**Auto (gaat altijd voor).** De auto die aan de Zappi hangt wordt herkend aan de kabel en locatie
+van de Tesla. Zit hij onder het minimum (standaard 250 km), dan laadt hij het verschil vóór
+"klaar om" in de goedkoopste slots. Daarboven laadt hij alleen tot vol als de prijs onder
+`car_opportunistic_price` ligt. 's Ochtends kan hij op Eco uit de accu laden, maar alleen als de
+zonprognose voor de rest van de dag genoeg is om auto, accu en huis weer aan te vullen. Met
+`vannacht` aan moet de auto helemaal vol zijn.
+
+**Accu.** Energymix simuleert per kwartier het laadniveau, met de zonprognose en het gemiddelde
+huisverbruik per uur (dat leert hij zelf uit je metingen). Hij laadt alleen van het net als die
+energie later duurdere stroom vervangt, met minstens `arbitrage_min_spread` winst per kWh na
+verliezen. Vult de zon de accu toch al, dan laadt hij niet. Bij een negatieve prijs laadt hij altijd.
+
+**Terugleveren.** Alleen als de schakelaar aan staat, het verschil na verliezen minstens
+`export_min_spread` per kWh is, de auto niet laadt, en nooit onder de reserve.
+
+**Laadstroom-regelaar.** Als de accu van het net laadt, kijkt een snelle regeling elke 30 s naar
+de ruimte op je aansluiting: `grid_max_import_w - grid_margin_w - wat de rest trekt`. Daarbij:
+- stappen van `dvcc_step_a` (standaard 10 A);
+- direct omlaag, maar pas na 2 minuten ruimte één stap omhoog;
+- regelt de Zappi zichzelf terug (Fast, maar minder dan `zappi_max_w * 0,85`), dan telt het
+  tekort als bezet. De auto gaat voor en de accu neemt die ruimte niet in.
+
+Hiervoor zijn `grid_power_entity`, `battery_power_entity` en `zappi_power_entity` nodig. Kies ze
+onder Instellingen in het dashboard.
+
+**Seizoenpatroon.** Energymix vergelijkt de gemiddelde prijs van 11-16u met die van 0-6u over de
+afgelopen week. Is de middag goedkoper, dan is het een zomerpatroon; is de nacht goedkoper, een
+winterpatroon. In het winterpatroon doet hij geen ochtend-eco uit de accu. De planning zelf volgt
+altijd de echte prijzen.
+
+## Victron-instellingen voor terugleveren
+
+Voor `setpoint` moet in de GX bij ESS terugleveren toegestaan zijn (*Grid feed-in*, en
+*Limit system feed-in* uit of hoog genoeg). Energymix zet bij terugleveren ook `DisableFeedIn` op 0 en
+de ESS-state op 10.
+
+## Instellingen
+
+De meeste instellingen pas je aan onder **Instellingen** in het dashboard. Die worden bewaard in
+`/data/settings.json` en gaan boven de add-on-configuratie. Tokens, MQTT en de lijst met auto's
+staan alleen in de add-on-configuratie.

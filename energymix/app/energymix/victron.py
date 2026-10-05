@@ -26,6 +26,7 @@ class Victron:
             "ess": f"W/{p}/settings/0/Settings/CGwacs/BatteryLife/State",
             "dvcc": f"W/{p}/settings/0/Settings/SystemSetup/MaxChargeCurrent",
             "feed_in": f"W/{p}/vebus/{self.vebus}/Hub4/DisableFeedIn",
+            "setpoint": f"W/{p}/settings/0/Settings/CGwacs/AcPowerSetPoint",
         }[kind]
 
     async def write(self, kind: str, value: int) -> None:

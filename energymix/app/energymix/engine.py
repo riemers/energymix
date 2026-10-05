@@ -1,4 +1,4 @@
-"""Collector → Planner → Executor in één lus."""
+"""Collector → Planner → Executor, plus de snelle regelaar en metingen."""
 
 from __future__ import annotations
 
@@ -7,38 +7,61 @@ import logging
 import time
 from dataclasses import asdict
 from datetime import datetime, timedelta, timezone
+from zoneinfo import ZoneInfo
 
 import aiohttp
 
+from . import helpers
 from .config import Config
 from .executor import Executor
+from .forecast import house_per_slot, pv_per_slot
 from .ha import HomeAssistant
-from .planner import CarState, Plan, State, make_plan
-from .prices import PriceSlot
+from .planner import CarState, Forecast, Plan, State, make_plan
+from .prices import PriceSlot, slot_at
+from .regulator import Regulator
 from .store import Store
+from .story import tell
 from .tibber import fetch_prices
 from .victron import Victron
 
 log = logging.getLogger(__name__)
 
+SAMPLE_SECONDS = 60
+PUBLISH_PREFIX = "energymix"
+
 
 class Engine:
     def __init__(self, cfg: Config, session: aiohttp.ClientSession, store: Store):
-        self.cfg, self.session, self.store = cfg, session, store
+        self.base_cfg = cfg
+        self.cfg = cfg
+        self.session, self.store = session, store
         self.ha = HomeAssistant(session, cfg.ha_url, cfg.ha_token)
         self.victron = Victron(
             cfg.mqtt_host, cfg.mqtt_port, cfg.victron_portal_id, cfg.victron_vebus_instance,
             cfg.mqtt_username, cfg.mqtt_password,
         )
         self.executor = Executor(cfg, self.ha, self.victron, store)
+        self.regulator = Regulator(cfg)
         self.prices: list[PriceSlot] = []
         self.prices_fetched = 0.0
         self.plan: Plan | None = None
         self.state: State | None = None
+        self.story: list[str] = []
+        self.helper_values: dict = {}
+        self.master = True
         self.errors: list[str] = []
+        self.stats_cache: tuple[float, dict] | None = None
+        self._profile: tuple[float, dict[int, float]] | None = None
+        self._helpers_checked = False
         self._wake = asyncio.Event()
+        self._last_sample = 0.0
         self.ha.on_change(self._on_ha_change)
 
+    @property
+    def tz(self) -> ZoneInfo:
+        return ZoneInfo(self.cfg.timezone)
+
+    # ------------------------------------------------------------ toestand
     @property
     def watched(self) -> set[str]:
         c = self.cfg
@@ -48,6 +71,7 @@ class Engine:
         }
         for car in c.cars:
             ents |= {car.cable_entity, car.location_entity}
+        ents |= {h.entity_id for h in helpers.HELPERS}
         return {e for e in ents if e}
 
     def _on_ha_change(self, entity_id: str, _new: dict) -> None:
@@ -56,17 +80,12 @@ class Engine:
             self._wake.set()
 
     def collect(self) -> State:
-        c, s = self.cfg, self.ha.state
-
-        def num(eid):
-            try:
-                return float(s(eid)) if eid else None
-            except ValueError:
-                return None
-
-        return State(
+        c, s, num = self.cfg, self.ha.state, self.ha.number
+        st = State(
             soc=num(c.battery_soc_entity),
             solar_today_kwh=num(c.solar_today_entity),
+            solar_remaining_kwh=num(c.solar_remaining_entity),
+            solar_tomorrow_kwh=num(c.solar_tomorrow_entity),
             sunchance=num(c.sunchance_entity),
             carcharger_mode=s(c.carcharger_select_entity).strip().lower() or "auto",
             vannacht=s(c.vannacht_entity).strip().lower() in {"on", "true"},
@@ -74,11 +93,50 @@ class Engine:
             zappi_status=s(c.zappi_status_entity),
             zappi_mode=s(c.zappi_mode_entity),
             cars=[
-                CarState(car.name, car.max_range_km, s(car.cable_entity), s(car.location_entity), s(car.range_entity))
+                CarState(car.name, car.max_range_km, s(car.cable_entity), s(car.location_entity), s(car.range_entity), car.kwh_per_km)
                 for car in c.cars
             ],
+            pv_w=num(c.pv_power_entity),
+            grid_w=num(c.grid_power_entity),
+            battery_w=num(c.battery_power_entity),
+            house_w=num(c.house_power_entity),
+            zappi_w=num(c.zappi_power_entity),
         )
+        # kW-sensoren omrekenen
+        for attr, eid in (("pv_w", c.pv_power_entity), ("grid_w", c.grid_power_entity),
+                          ("battery_w", c.battery_power_entity), ("house_w", c.house_power_entity),
+                          ("zappi_w", c.zappi_power_entity)):
+            unit = str(self.ha.attributes(eid).get("unit_of_measurement", "")).lower() if eid else ""
+            if unit == "kw" and getattr(st, attr) is not None:
+                setattr(st, attr, getattr(st, attr) * 1000)
+        if st.house_w is None and st.grid_w is not None:
+            st.house_w = (st.pv_w or 0) + st.grid_w - (st.battery_w or 0) - (st.zappi_w or 0)
+        return st
 
+    def forecast(self, now: datetime) -> Forecast:
+        c = self.cfg
+        home = self.ha.attributes("zone.home")
+        lat = float(home.get("latitude", 52.1))
+        lon = float(home.get("longitude", 5.1))
+        detailed = None
+        for eid in (c.solar_remaining_entity, c.solar_tomorrow_entity):
+            d = self.ha.attributes(eid).get("detailedForecast") if eid else None
+            if d:
+                detailed = (detailed or []) + list(d)
+        st = self.state or State()
+        pv = pv_per_slot(self.prices, now, self.tz, st.solar_remaining_kwh, st.solar_tomorrow_kwh, lat, lon, detailed)
+        if self._profile is None or time.time() - self._profile[0] > 3600:
+            self._profile = (time.time(), self.store.house_profile(self.tz))
+        house = house_per_slot(self.prices, self.tz, self._profile[1], c.house_load_default_w)
+        stats = self.battery_stats()
+        return Forecast(pv, house, stats.get("learned_charge_w"))
+
+    def battery_stats(self) -> dict:
+        if self.stats_cache is None or time.time() - self.stats_cache[0] > 600:
+            self.stats_cache = (time.time(), self.store.battery_stats(self.tz, self.cfg.battery_capacity_kwh))
+        return self.stats_cache[1]
+
+    # ------------------------------------------------------------ prijzen
     async def refresh_prices(self, force: bool = False) -> None:
         now = datetime.now(timezone.utc)
         covered = self.prices and self.prices[-1].end > now + timedelta(hours=12)
@@ -92,6 +150,21 @@ class Engine:
         self.prices_fetched = time.time()
         self.store.save_prices(self.prices)
 
+    # ------------------------------------------------------------ helpers
+    async def _helpers(self) -> None:
+        if not self.ha.connected.is_set():
+            return
+        if self.base_cfg.create_helpers and not self._helpers_checked:
+            self._helpers_checked = True
+            await helpers.ensure_helpers(self.ha)
+            await asyncio.sleep(1)
+        self.helper_values = helpers.read_helpers(self.ha)
+        self.cfg = helpers.apply_overrides(self.base_cfg, self.helper_values)
+        self.master = self.helper_values.get("master", True)
+        self.executor.cfg = self.cfg
+        self.regulator.cfg = self.cfg
+
+    # ------------------------------------------------------------ cyclus
     async def cycle(self) -> None:
         errors: list[str] = []
         try:
@@ -101,15 +174,47 @@ class Engine:
             log.warning("Prijzen ophalen mislukt: %s", e)
         if not self.ha.connected.is_set():
             errors.append("Geen verbinding met Home Assistant")
+        try:
+            await self._helpers()
+        except Exception as e:  # noqa: BLE001
+            log.warning("Helpers: %s", e)
+        now = datetime.now(timezone.utc)
         self.state = self.collect()
-        self.plan = make_plan(self.cfg, self.prices, self.state, datetime.now(timezone.utc))
+        history = list({p.start: p for p in [*self.store.price_history(8), *self.prices]}.values())
+        self.plan = make_plan(self.cfg, self.prices, self.state, now, self.forecast(now), history)
+        self.story = tell(self.plan, self.state, self.tz)
         self.store.save_plan(self.plan.to_dict(), asdict(self.state))
         if self.plan.now and self.ha.connected.is_set():
-            await self.executor.apply(self.plan.now)
+            dvcc = self.regulator.step(self.plan.now, self.state)
+            await self.executor.apply(self.plan.now, self.master, dvcc)
+            try:
+                await self.publish()
+            except Exception as e:  # noqa: BLE001
+                log.warning("Sensoren publiceren mislukt: %s", e)
         self.errors = errors
+
+    async def fast_tick(self) -> None:
+        """Elke paar seconden: live toestand, regelaar en metingen."""
+        if not self.ha.connected.is_set():
+            return
+        self.state = self.collect()
+        now = time.time()
+        if now - self._last_sample >= SAMPLE_SECONDS:
+            self._last_sample = now
+            st = self.state
+            cur = slot_at(self.prices, datetime.now(timezone.utc))
+            self.store.add_sample(
+                datetime.now(timezone.utc), soc=st.soc, pv_w=st.pv_w, grid_w=st.grid_w,
+                battery_w=st.battery_w, house_w=st.house_w, zappi_w=st.zappi_w, price=cur.price if cur else None,
+            )
+        if self.plan and self.plan.now:
+            value, why = self.regulator.step(self.plan.now, self.state)
+            if value is not None and value != self.executor._last_desired.get("dvcc"):
+                await self.executor.apply_dvcc(value, why, self.master)
 
     async def run(self) -> None:
         asyncio.create_task(self.ha.run())
+        asyncio.create_task(self._fast_loop())
         try:
             await asyncio.wait_for(self.ha.connected.wait(), 20)
         except asyncio.TimeoutError:
@@ -126,6 +231,60 @@ class Engine:
             except asyncio.TimeoutError:
                 pass
 
+    async def _fast_loop(self) -> None:
+        while True:
+            try:
+                await self.fast_tick()
+            except Exception:  # noqa: BLE001
+                log.exception("Snelle lus mislukt")
+            await asyncio.sleep(max(5, self.cfg.regulator_seconds))
+
     def _seconds_to_next_tick(self) -> float:
         step = self.cfg.interval_minutes * 60
         return step - (time.time() % step) + 2
+
+    # ------------------------------------------------------------ naar HA
+    async def publish(self) -> None:
+        plan, st, p = self.plan, self.state, PUBLISH_PREFIX
+        if not plan or not plan.now or not st:
+            return
+        cur = plan.now
+        season_label = {"day": "Zomer (middag goedkoop)", "night": "Winter (nacht goedkoop)", "neutral": "Neutraal"}.get(
+            plan.season.get("effective"), "Onbekend"
+        )
+        ess_label = "Laden van net" if cur.ess_state == 9 else "Terugleveren" if (cur.setpoint_w or 0) < 0 else "Zelfverbruik"
+        story = " ".join(self.story)
+        sensors = {
+            f"sensor.{p}_status": (story[:250], {"friendly_name": "Energymix status", "icon": "mdi:lightning-bolt", "verhaal": self.story}),
+            f"sensor.{p}_prijs_nu": (round(cur.price, 4), {"friendly_name": "Energymix prijs nu", "unit_of_measurement": "EUR/kWh", "icon": "mdi:currency-eur"}),
+            f"sensor.{p}_accu_modus": (ess_label, {"friendly_name": "Energymix accu", "icon": "mdi:home-battery", "reden": cur.reasons.get("ess")}),
+            f"sensor.{p}_zappi_plan": (cur.zappi_mode or "geen", {"friendly_name": "Energymix Zappi", "icon": "mdi:ev-station", "reden": cur.reasons.get("zappi")}),
+            f"sensor.{p}_seizoen": (season_label, {"friendly_name": "Energymix seizoenpatroon", "icon": "mdi:weather-sunny-alert", **plan.season}),
+            f"sensor.{p}_besparing": (plan.summary.get("saving_eur", 0), {"friendly_name": "Energymix verwachte besparing", "unit_of_measurement": "EUR", "icon": "mdi:piggy-bank"}),
+            f"binary_sensor.{p}_terugleveren": ("on" if (cur.setpoint_w or 0) < 0 else "off", {"friendly_name": "Energymix levert terug", "icon": "mdi:transmission-tower-export"}),
+        }
+        if plan.summary.get("target_reached_at"):
+            sensors[f"sensor.{p}_accu_vol_om"] = (plan.summary["target_reached_at"], {"friendly_name": "Energymix accu op doel om", "device_class": "timestamp"})
+        if plan.car.full_at:
+            sensors[f"sensor.{p}_auto_vol_om"] = (plan.car.full_at.isoformat(), {"friendly_name": "Energymix auto vol om", "device_class": "timestamp", "auto": plan.car.name})
+        for eid, (state, attrs) in sensors.items():
+            await self.ha.set_state(eid, state, attrs)
+
+    # ------------------------------------------------------------ live
+    def live(self) -> dict:
+        st = self.state or State()
+        cars = []
+        for car, cs in zip(self.cfg.cars, st.cars):
+            cars.append({
+                "name": car.name, "range_km": cs.range_value, "max_range_km": car.max_range_km,
+                "connected": cs.connected, "home": cs.home,
+            })
+        cur = slot_at(self.prices, datetime.now(timezone.utc))
+        return {
+            "ts": datetime.now(timezone.utc).isoformat(),
+            "soc": st.soc, "pv_w": st.pv_w, "grid_w": st.grid_w, "battery_w": st.battery_w,
+            "house_w": st.house_w, "zappi_w": st.zappi_w, "zappi_mode": st.zappi_mode,
+            "zappi_status": st.zappi_status, "zappi_plug": st.zappi_plug, "cars": cars,
+            "price": cur.price if cur else None,
+            "regulator": self.regulator.st.to_dict(),
+        }
