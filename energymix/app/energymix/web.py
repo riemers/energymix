@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import asdict
+from datetime import datetime, timezone
 from pathlib import Path
 
 from aiohttp import web
@@ -71,6 +72,21 @@ FALLBACK = {
     "house_power_entity": (None, "berekend: zon + net - accu - Zappi"),
 }
 
+
+def entity_age(st: dict | None) -> float | None:
+    """Seconden sinds de entity voor het laatst is bijgewerkt."""
+    ts = (st or {}).get("last_updated") or (st or {}).get("last_changed")
+    if not ts:
+        return None
+    try:
+        return (datetime.now(timezone.utc) - datetime.fromisoformat(str(ts))).total_seconds()
+    except ValueError:
+        return None
+
+
+# Sensoren die altijd blijven veranderen: staan ze lang stil, dan klopt er iets niet
+AGE_CHECK = {"battery_soc_entity", "battery_power_entity", "grid_power_entity",
+             "grid_l1_entity", "grid_l2_entity", "grid_l3_entity"}
 
 EXCLUDE = {"zappi_status_entity": "plug_status"}
 
@@ -158,7 +174,13 @@ def create_app(engine: Engine) -> web.Application:
             f = {"key": k, "label": label, "kind": kind, "group": group, "value": val,
                  "state": engine.ha.state(val) if kind == "entity" and val else None,
                  "unit": engine.ha.attributes(val).get("unit_of_measurement") if kind == "entity" and val else None,
-                 "suggestion": None, "fallback": None}
+                 "suggestion": None, "fallback": None, "age_s": None}
+            if kind == "entity" and val and k in AGE_CHECK:
+                f["age_s"] = entity_age(engine.ha.states.get(val))
+            if k == "battery_soc_entity":
+                v_soc = engine.victron.soc()
+                if v_soc is not None:
+                    f["fallback"] = {"label": f"Victron GX zegt {v_soc:.1f}% en gaat voor", "active": True}
             if kind == "entity" and not val:
                 sug = suggest(engine.ha.states, k)
                 if sug:

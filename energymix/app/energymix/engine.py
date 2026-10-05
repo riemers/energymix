@@ -57,6 +57,7 @@ class Engine:
         self._wake = asyncio.Event()
         self._last_sample = 0.0
         self.sources: dict[str, str] = {}
+        self._soc_warned = False
         self.ha.on_change(self._on_ha_change)
 
     @property
@@ -130,9 +131,19 @@ class Engine:
         if st.battery_w is None and self.victron.battery_w() is not None:
             st.battery_w = self.victron.battery_w()
             self.sources["battery_w"] = "Victron MQTT"
-        if st.soc is None and self.victron.soc() is not None:
+        # Accuniveau: de GX zelf gaat voor (dat is wat VRM/het display toont); HA-sensor als terugval
+        if self.victron.soc() is not None:
+            ha_soc = st.soc
             st.soc = self.victron.soc()
             self.sources["soc"] = "Victron MQTT"
+            if ha_soc is not None and abs(ha_soc - st.soc) >= 5 and not self._soc_warned:
+                self._soc_warned = True
+                log.warning(
+                    "Accuniveau wijkt af: %s zegt %.1f%%, de Victron GX %.1f%%. Energymix gebruikt de GX.",
+                    c.battery_soc_entity, ha_soc, st.soc,
+                )
+        elif st.soc is not None:
+            self.sources["soc"] = "HA"
         if st.house_w is None and st.grid_w is not None:
             st.house_w = (st.pv_w or 0) + st.grid_w - (st.battery_w or 0) - (st.zappi_w or 0)
         return st

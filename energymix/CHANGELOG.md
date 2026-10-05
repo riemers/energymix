@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.2.3
+- Accuniveau komt nu van de Victron GX zelf (MQTT); de HA-sensor is alleen terugval.
+  Wijken ze meer dan 5% af, dan staat dat in het logboek
+- Instellingen: waarschuwing als een accu-, net- of fasesensor al 12 uur niet is bijgewerkt
+
 ## 0.2.2
 - Live waarden rechtstreeks van de Victron GX via MQTT: netvermogen per fase, accuvermogen, SoC.
   Gebruikt als de HA-entity leeg is (geen extra sensoren nodig)

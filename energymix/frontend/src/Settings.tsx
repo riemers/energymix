@@ -118,6 +118,12 @@ function FieldRow({ f, value, onChange }: { f: SettingField; value: string | num
               </button>
             </div>
           )}
+          {!!value && f.age_s !== null && f.age_s > 12 * 3600 && (
+            <div className="mt-1 text-[11px] text-amber-300/90">
+              ⚠ al {fmtAge(f.age_s)} niet bijgewerkt: klopt deze entity nog?
+            </div>
+          )}
+          {!!value && f.fallback && <div className="mt-1 text-[11px] text-sky-300/80">✓ {f.fallback.label}</div>}
           {!value && f.fallback && (
             <div className={`mt-1 text-[11px] ${f.fallback.active ? "text-sky-300/80" : "text-slate-500"}`}>
               {f.fallback.active ? "✓ " : ""}leeg laten = {f.fallback.label}
@@ -211,4 +217,9 @@ function EntityPicker({ value, current, onChange }: { value: string; current: Se
       )}
     </div>
   );
+}
+
+function fmtAge(s: number): string {
+  const h = s / 3600;
+  return h < 48 ? `${Math.round(h)} uur` : `${Math.round(h / 24)} dagen`;
 }
