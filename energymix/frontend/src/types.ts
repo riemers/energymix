@@ -92,6 +92,8 @@ export interface Summary {
   empty_why?: string;
   house_kwh_24h?: number;
   pv_kwh_24h?: number;
+  hold_value_eur?: number;
+  hold_windows?: { start: string; end: string }[];
   runway?: { expected?: string | null; early?: string | null; late?: string | null; basis_until?: string };
 }
 

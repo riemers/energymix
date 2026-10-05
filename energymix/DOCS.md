@@ -39,6 +39,7 @@ automations gebruiken. Ze zijn hetzelfde als de schakelaars in het Energymix-das
 | `input_boolean.energymix_auto_snel_laden` | Auto nu Fast tot vol, boven alle planning; gaat vanzelf uit |
 | `input_boolean.energymix_terugleveren` | Terugleveren bij grote prijsverschillen |
 | `input_boolean.energymix_accu_van_net_laden` | Accu goedkoop van het net laden |
+| `input_boolean.energymix_accu_bewaren` | Accu bewaren voor duurdere momenten (standaard uit) |
 | `input_number.energymix_accu_doel` | Accu laden tot (%) |
 | `input_number.energymix_accu_reserve` | Reserve die nooit teruggeleverd wordt (%) |
 | `input_datetime.energymix_auto_klaar_om` | Met "vannacht" aan: auto vol vóór deze tijd |
@@ -83,12 +84,13 @@ verliezen. Vult de zon de accu toch al, dan laadt hij niet. Bij een negatieve pr
 **Terugleveren.** Alleen als de schakelaar aan staat, het verschil na verliezen minstens
 `export_min_spread` per kWh is, de auto niet laadt, en nooit onder de reserve.
 
-**Bewaren.** In een goedkoop uur kan het voordeliger zijn om het huis van het net te laten draaien
+**Bewaren (schakelaar, standaard uit).** In een goedkoop uur kan het voordeliger zijn om het huis van het net te laten draaien
 en de accu te sparen voor de dure avond (vooral in de winter, als de nacht goedkoop is). Energymix
 zet de accu dan op "keep batteries charged" met laadstroom 0: niet laden, niet ontladen.
 Dat gebeurt alleen als de accu anders vóór dat dure moment leeg (10%) raakt, met de zonprognose
 voor vandaag en morgen erbij. Bewaren gaat altijd in blokken van minstens een uur, bij voorkeur één
-aaneengesloten blok, zodat de Victron niet per kwartier wisselt.
+aaneengesloten blok, zodat de Victron niet per kwartier wisselt. Staat de schakelaar uit, dan rekent
+hij toch uit wat het zou schelen: dat zie je bij de schakelaar en in `sensor.energymix_bewaren_waarde`.
 
 **Laadstroom-regelaar (per fase).** Als de accu van het net laadt, kijkt een snelle regeling elke
 30 s **per fase** hoeveel ruimte er is:

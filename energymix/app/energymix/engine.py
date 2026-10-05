@@ -428,6 +428,12 @@ class Engine:
         }
         if plan.summary.get("target_reached_at"):
             sensors[f"sensor.{p}_accu_vol_om"] = (plan.summary["target_reached_at"], {"friendly_name": "Energymix accu op doel om", "device_class": "timestamp"})
+        if "hold_value_eur" in plan.summary:
+            sensors[f"sensor.{p}_bewaren_waarde"] = (
+                plan.summary["hold_value_eur"],
+                {"friendly_name": "Energymix accu bewaren zou schelen", "unit_of_measurement": "€",
+                 "icon": "mdi:battery-lock", "blokken": plan.summary.get("hold_windows", [])},
+            )
         rw = plan.summary.get("runway") or {}
         if rw:
             sensors[f"sensor.{p}_accu_leeg_om"] = (

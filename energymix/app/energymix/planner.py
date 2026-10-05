@@ -19,6 +19,7 @@ Volgorde:
 
 from __future__ import annotations
 
+import copy
 import re
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, time, timedelta
@@ -334,7 +335,17 @@ def make_plan(
     # 3. Accu
     summary: dict = {}
     if cfg.has_battery and state.soc is not None:
-        summary = _plan_battery(cfg, tz, now, slots, plans, state, fc, season, car)
+        # Wat zou bewaren opleveren? Reken de andere keuze ook door, zodat de schakelaar
+        # kan laten zien of het om €5 of om 45 cent gaat.
+        alt_plans = copy.deepcopy(plans)
+        alt = _plan_battery(cfg, tz, now, slots, alt_plans, state, fc, season, car, allow_hold=not cfg.hold_enabled)
+        summary = _plan_battery(cfg, tz, now, slots, plans, state, fc, season, car, allow_hold=cfg.hold_enabled)
+        on, off = (summary, alt) if cfg.hold_enabled else (alt, summary)
+        on_plans = plans if cfg.hold_enabled else alt_plans
+        summary["hold_value_eur"] = round(max(0.0, on.get("saving_eur", 0) - off.get("saving_eur", 0)), 2)
+        summary["hold_windows"] = [
+            {"start": b["start"], "end": b["end"]} for b in _battery_sessions(on_plans) if b["kind"] == "hold"
+        ] if summary["hold_value_eur"] >= 0.01 else []
         summary["runway"] = battery_runway(cfg, tz, now, plans, state.soc)
         if summary.get("hold_slots") and summary.get("empty_why"):
             notes.append(f"Accu bewaren: {summary['empty_why']}")
@@ -786,7 +797,8 @@ class _Sim:
     terminal_e: float
 
 
-def _plan_battery(cfg, tz, now, slots, plans: list[SlotPlan], state: State, fc: Forecast, season, car: CarPlan) -> dict:
+def _plan_battery(cfg, tz, now, slots, plans: list[SlotPlan], state: State, fc: Forecast, season, car: CarPlan,
+                  allow_hold: bool = True) -> dict:
     cap = cfg.battery_capacity_kwh
     eff_c = cfg.charge_efficiency if 0 < cfg.charge_efficiency <= 1 else 0.93
     eff_rt = cfg.roundtrip_efficiency if 0 < cfg.roundtrip_efficiency <= 1 else 0.85
@@ -938,7 +950,7 @@ def _plan_battery(cfg, tz, now, slots, plans: list[SlotPlan], state: State, fc: 
                         threshold = max(threshold, cfg.export_min_spread)
                     if per_kwh > threshold and (best is None or per_kwh > best[0]):
                         best = (per_kwh, "gc", i, delta, sim, per_kwh)
-        for block in hold_blocks:
+        for block in hold_blocks if allow_hold else []:
             # Bewaren: een heel blok (min. een uur) het huis van het net, accu sparen.
             # Per blok i.p.v. per kwartier, anders kiest hij losse goedkope kwartiertjes.
             new_slots = [k for k in block if not hold[k]]

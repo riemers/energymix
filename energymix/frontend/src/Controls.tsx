@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { setHelper } from "./api";
-import { eur } from "./format";
+import { eur, relDay, time } from "./format";
 import { Leaf, Moon, Sun } from "./icons";
 import { Segmented, Slider, Switch } from "./ui";
 import type { HelperInfo, Status } from "./types";
@@ -50,6 +50,12 @@ export default function Controls({ status, onStatus }: Props) {
         title="Accu goedkoop van net laden"
         sub="Alleen als het later duurdere stroom vervangt"
         right={<Switch checked={!!h.grid_charge_enabled?.value} disabled={busy === "grid_charge_enabled"} onChange={(v) => set("grid_charge_enabled", v)} />}
+      />
+
+      <Row
+        title="Accu bewaren"
+        sub={holdText(status, !!h.hold_enabled?.value)}
+        right={<Switch checked={!!h.hold_enabled?.value} disabled={busy === "hold_enabled"} onChange={(v) => set("hold_enabled", v)} />}
       />
 
       <div className="space-y-3 border-t border-white/5 pt-4">
@@ -135,4 +141,18 @@ function Field({ label, children }: { label: React.ReactNode; children: React.Re
       {children}
     </div>
   );
+}
+
+function holdText(status: Status, on: boolean): string {
+  const s = status.plan?.summary;
+  const tz = status.timezone;
+  const v = s?.hold_value_eur ?? 0;
+  const w = s?.hold_windows ?? [];
+  const when = w.length
+    ? w.slice(0, 2).map((x) => `${relDay(x.start, tz)}–${time(x.end, tz)}`).join(", ") + (w.length > 2 ? ` +${w.length - 2}` : "")
+    : "";
+  if (v < 0.01 || !w.length) return "Huis van het net en de accu sparen voor een duurder moment. Nu levert het niets op";
+  return on
+    ? `Aan: bespaart ${eur(v, 2)} in deze planning (${when})`
+    : `Zou ${eur(v, 2)} schelen in deze planning (${when})`;
 }

@@ -85,6 +85,11 @@ HELPERS: list[Helper] = [
         _bool, "Accu goedkoop van net laden",
     ),
     Helper(
+        "input_boolean.energymix_accu_bewaren", "hold_enabled",
+        {"type": "input_boolean/create", "name": "Energymix accu bewaren", "icon": "mdi:battery-lock"},
+        _bool, "Accu bewaren voor duurdere momenten",
+    ),
+    Helper(
         "input_number.energymix_accu_doel", "battery_target_soc",
         {"type": "input_number/create", "name": "Energymix accu doel", "min": 50, "max": 100, "step": 5,
          "unit_of_measurement": "%", "mode": "slider", "icon": "mdi:battery-arrow-up", "initial": 95},

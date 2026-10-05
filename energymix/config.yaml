@@ -1,5 +1,5 @@
 name: Energymix
-version: "0.2.20"
+version: "0.2.21"
 slug: energymix
 description: Energieplanner op basis van Tibber-prijzen voor Victron, zonnepanelen en Zappi
 url: https://github.com/riemers/energymix
@@ -114,6 +114,7 @@ schema:
   energy_tax_eur: float?
   export_enabled: bool?
   grid_charge_enabled: bool?
+  hold_enabled: bool?
   season_mode: list(auto|day|night)?
   car_min_range_km: int?
   car_ready_time: str?

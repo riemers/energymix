@@ -404,7 +404,7 @@ def test_hold_in_blocks_not_scattered_quarters():
     day = [0.60] * 16 + [0.33] * 52  # 07:00-24:00, duur 07-11u
     prices = quarters(at(0), night + day)
     plan = make_plan(
-        cfg(house_load_default_w=1500, grid_charge_enabled=False), prices, State(soc=40), at(0, 5)
+        cfg(house_load_default_w=1500, grid_charge_enabled=False, hold_enabled=True), prices, State(soc=40), at(0, 5)
     )
     held = [s.dvcc_current == 0 and s.ess_state == ESS_KEEP_CHARGED for s in plan.slots]
     assert any(held)
@@ -449,7 +449,7 @@ def test_battery_runway_sun_refills():
 def _reserve_case(reserve):
     prices = quarters(at(15, day=5), [0.40] * 36 + [0.36] * 16 + [0.33] * 58 + [0.566] * 8 + [0.35] * 18)
     pv = {s.start: (0.6 if 10 <= s.start.astimezone(TZ).hour < 16 and s.start.day == 6 else 0.0) for s in prices}
-    return make_plan(cfg(house_load_default_w=600, export_enabled=True, battery_reserve_soc=reserve, grid_charge_enabled=False),
+    return make_plan(cfg(house_load_default_w=600, export_enabled=True, battery_reserve_soc=reserve, grid_charge_enabled=False, hold_enabled=True),
                      prices, State(soc=80), at(15, 5, day=5), Forecast(pv_kwh=pv))
 
 
@@ -464,3 +464,18 @@ def test_hold_for_export_is_labelled_as_export():
     plan = _reserve_case(55)
     holds = [b for b in plan.battery_sessions if b["kind"] == "hold"]
     assert all("meer terugleveren" in b["reason"] for b in holds)
+
+
+def test_hold_off_by_default_but_shows_what_it_would_save():
+    import random
+
+    rnd = random.Random(3)
+    night = [0.30 + rnd.random() * 0.03 for _ in range(28)]
+    prices = quarters(at(0), night + [0.60] * 16 + [0.33] * 52)
+    plan = make_plan(cfg(house_load_default_w=1500, grid_charge_enabled=False), prices, State(soc=40), at(0, 5))
+    assert not any(s.dvcc_current == 0 for s in plan.slots)
+    assert plan.summary["hold_value_eur"] > 0.3
+    assert plan.summary["hold_windows"]
+    on = make_plan(cfg(house_load_default_w=1500, grid_charge_enabled=False, hold_enabled=True), prices, State(soc=40), at(0, 5))
+    assert any(s.dvcc_current == 0 for s in on.slots)
+    assert on.summary["hold_value_eur"] == plan.summary["hold_value_eur"]
