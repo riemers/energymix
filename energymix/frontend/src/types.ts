@@ -56,6 +56,8 @@ export interface CarPlan {
   kwh_per_km: number;
   need_km: number;
   need_minutes: number;
+  eco_km: number;
+  eco_reason: string;
 }
 
 export interface Season {

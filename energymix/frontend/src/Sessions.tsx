@@ -32,6 +32,12 @@ export default function Sessions({ plan, tz }: { plan: Plan; tz: string }) {
             </span>
           )}
         </div>
+        {car.name && car.need_km > 0.5 && car.eco_reason && (
+          <div className={`mb-2 rounded-lg px-3 py-1.5 text-[11px] ${car.eco_km > 0.5 ? "bg-violet-400/10 text-violet-200" : "bg-white/[0.03] text-slate-500"}`}>
+            {car.eco_km > 0.5 ? `Ochtend-eco vandaag: ~${Math.round(car.eco_km)} km uit accu/zon. ` : "Geen ochtend-eco: "}
+            {car.eco_km > 0.5 ? car.eco_reason : car.eco_reason}
+          </div>
+        )}
         {plan.car_sessions.length ? (
           <ul className="space-y-1.5">
             {plan.car_sessions.map((c) => (

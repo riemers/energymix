@@ -50,9 +50,14 @@ aan de kabel en locatie van de Tesla. Wat er mist tot de max-actieradius (`cars[
 gedeeld door de laadsnelheid (`charge_speed_km_per_hour`, standaard 65 km per uur), is de laadtijd.
 Die wordt ingepland in de goedkoopste uren van de bekende prijzen (vandaag en, na ±13:00, morgen).
 Staat `vannacht` aan, dan moet de auto vol zijn vóór "Vannacht: auto vol om"
-(`input_datetime.energymix_auto_klaar_om`). Kan niet alles ingepland worden, dan kan de auto
-'s ochtends op Eco uit de accu laden, maar alleen als de zonprognose voor de rest van de dag genoeg is
-om dat weer aan te vullen.
+(`input_datetime.energymix_auto_klaar_om`).
+
+**Ochtend-eco.** Is de accu al behoorlijk vol (`eco_battery_soc_min`, standaard 60%) én wordt het
+een echte zonnedag (`eco_solar_min`, standaard 35 kWh volgens de prognose voor vandaag), dan laadt
+de auto 's ochtends (5–12u) op Eco, met de Victron op all loads zodat de accu meehelpt. Wat dat
+oplevert gaat af van de laadtijd; alleen de rest gaat naar de goedkoopste uren (Fast). Later op de
+dag laadt de accu weer bij met zon of, als dat loont, met goedkope netstroom. In het winterpatroon
+is er geen ochtend-eco. De drempels pas je aan onder Instellingen → Auto.
 
 **Accu.** Energymix simuleert per kwartier het laadniveau, met de zonprognose en het gemiddelde
 huisverbruik per uur (dat leert hij zelf uit je metingen). Hij laadt alleen van het net als die

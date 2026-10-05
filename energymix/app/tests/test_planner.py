@@ -171,18 +171,42 @@ def test_vannacht_means_full_before_ready_hour():
     assert plan.car.full_at is not None
 
 
-def test_morning_eco_only_when_car_not_fully_planned():
-    # Te weinig bekende uren voor de hele lading: rest 's ochtends uit accu als de zon het aanvult
+def test_morning_eco_first_then_cheap_hours():
+    # Accu 75%, 40 kWh zon verwacht, auto mist 100 km, om 14:00 goedkoop
+    prices = hourly(at(0), [0.30] * 14 + [0.14] + [0.30] * 9)
+    st = State(soc=75, solar_today_kwh=40, sunchance=70, zappi_plug="EV Connected",
+               carcharger_mode="auto", cars=car("300"))
+    plan = make_plan(cfg(), prices, st, at(7))
+    h = by_hour(plan)
+    # 07-12u Eco met Victron all loads
+    assert all(h[x].zappi_mode == "Eco" and h[x].feed_in_disabled == 0 for x in range(7, 12))
+    assert "ochtend-eco" in h[7].reasons["zappi"]
+    # 5u x 3.7 kW = 18.5 kWh = 92 km; rest (8 km) Fast in het goedkope uur
+    assert round(plan.car.eco_km) == 92
+    assert h[14].zappi_mode == "Fast" and h[14].car_kwh < 2
+    assert h[12].zappi_mode == "Eco+"
+    kinds = [s["kinds"] for s in plan.car.sessions]
+    assert kinds == [["eco"], ["goedkoopst"]]
+    # Tijdens eco levert de accu aan de auto: nooit bewaren of van het net laden
+    assert all(h[x].ess_state != 9 for x in range(7, 12))
+
+
+def test_no_morning_eco_when_battery_low_or_little_sun():
+    prices = hourly(at(0), [0.30] * 14 + [0.14] + [0.30] * 9)
+    for soc, sun in ((50, 40), (75, 20)):
+        st = State(soc=soc, solar_today_kwh=sun, sunchance=70, zappi_plug="EV Connected",
+                   carcharger_mode="auto", cars=car("300"))
+        plan = make_plan(cfg(), prices, st, at(7))
+        assert not any(s.zappi_mode == "Eco" for s in plan.slots)
+        assert by_hour(plan)[14].zappi_mode == "Fast"
+        assert all(s.feed_in_disabled == 1 for s in plan.slots)
+
+
+def test_no_morning_eco_in_winter_pattern():
     prices = hourly(at(0), [0.30] * 24)
-    st = State(soc=80, solar_remaining_kwh=60, sunchance=70, zappi_plug="EV Connected",
-               carcharger_mode="auto", vannacht=True, cars=car("100"))
-    plan = make_plan(cfg(car_ready_time="07:30"), prices, st, at(7))
-    assert plan.now.zappi_mode == "Fast"  # het enige uur vóór 07:30
-    later = by_hour(plan)[9]
-    assert later.zappi_mode == "Eco" and later.feed_in_disabled == 0
-    st.solar_remaining_kwh = 5
-    plan = make_plan(cfg(car_ready_time="07:30"), prices, st, at(7))
-    assert by_hour(plan)[9].zappi_mode == "Eco+"
+    st = State(soc=80, solar_today_kwh=40, zappi_plug="EV Connected", carcharger_mode="auto", cars=car("300"))
+    plan = make_plan(cfg(season_mode="night"), prices, st, at(7))
+    assert not any(s.zappi_mode == "Eco" for s in plan.slots)
 
 
 def test_ecoa_enables_all_loads_and_no_car_means_no_zappi():
