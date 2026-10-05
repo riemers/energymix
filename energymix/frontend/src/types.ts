@@ -54,6 +54,8 @@ export interface CarPlan {
   full_at: string | null;
   max_range_km: number | null;
   kwh_per_km: number;
+  need_km: number;
+  need_minutes: number;
 }
 
 export interface Season {

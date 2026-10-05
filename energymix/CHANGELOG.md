@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.2.6
+- Auto laadt weer zoals in Node-RED: ontbrekende km tot de max-actieradius / laadsnelheid
+  (65 km/u) = laadtijd, in de goedkoopste bekende uren. Geen minimum-km meer
+  (helper `input_number.energymix_auto_minimum` wordt niet meer gebruikt; mag weg)
+- "Klaar om" geldt alleen nog als `vannacht` aan staat
+- Zon telt weer mee als ruimte op een fase; de Zappi-terugregeling vangt een wolk op
+- Laadplan toont hoeveel km er mist en hoe lang dat laden duurt
+
 ## 0.2.5
 - Veiligheid: teruglevering (zon) telt niet meer als extra ruimte op een fase; maximaal altijd
   zekering - marge (bv. 23 A), ook als de panelen veel leveren

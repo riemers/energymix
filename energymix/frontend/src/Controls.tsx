@@ -52,10 +52,7 @@ export default function Controls({ status, onStatus }: Props) {
         <Field label="Reserve bij terugleveren">
           <Slider value={Number(h.battery_reserve_soc?.value ?? 30)} min={10} max={80} step={5} unit="%" accent="#fbbf24" onCommit={(v) => set("battery_reserve_soc", v)} />
         </Field>
-        <Field label="Auto altijd minimaal">
-          <Slider value={Number(h.car_min_range_km?.value ?? 250)} min={0} max={450} step={10} unit=" km" accent="#f472b6" onCommit={(v) => set("car_min_range_km", v)} />
-        </Field>
-        <Field label="Auto klaar om">
+        <Field label="Vannacht vol om">
           <label className="flex items-center gap-2 rounded-lg bg-white/5 px-3 py-1.5 text-sm">
             <input
               type="time"

@@ -35,8 +35,7 @@ automations gebruiken. Ze zijn hetzelfde als de schakelaars in het Energymix-das
 | `input_boolean.energymix_accu_van_net_laden` | Accu goedkoop van het net laden |
 | `input_number.energymix_accu_doel` | Accu laden tot (%) |
 | `input_number.energymix_accu_reserve` | Reserve die nooit teruggeleverd wordt (%) |
-| `input_number.energymix_auto_minimum` | Auto altijd minimaal (km) |
-| `input_datetime.energymix_auto_klaar_om` | Wanneer het minimum er moet zijn |
+| `input_datetime.energymix_auto_klaar_om` | Met "vannacht" aan: auto vol vóór deze tijd |
 | `input_select.energymix_seizoen` | Automatisch / Zomer / Winter |
 
 En deze sensoren: `sensor.energymix_status` (het verhaal), `sensor.energymix_prijs_nu`,
@@ -46,12 +45,14 @@ En deze sensoren: `sensor.energymix_status` (het verhaal), `sensor.energymix_pri
 
 ## Hoe hij beslist
 
-**Auto (gaat altijd voor).** De auto die aan de Zappi hangt wordt herkend aan de kabel en locatie
-van de Tesla. Zit hij onder het minimum (standaard 250 km), dan laadt hij het verschil vóór
-"klaar om" in de goedkoopste slots. Daarboven laadt hij alleen tot vol als de prijs onder
-`car_opportunistic_price` ligt. 's Ochtends kan hij op Eco uit de accu laden, maar alleen als de
-zonprognose voor de rest van de dag genoeg is om auto, accu en huis weer aan te vullen. Met
-`vannacht` aan moet de auto helemaal vol zijn.
+**Auto (gaat altijd voor).** Net als in de Node-RED-flow: de auto die aan de Zappi hangt wordt herkend
+aan de kabel en locatie van de Tesla. Wat er mist tot de max-actieradius (`cars[].max_range_km`),
+gedeeld door de laadsnelheid (`charge_speed_km_per_hour`, standaard 65 km per uur), is de laadtijd.
+Die wordt ingepland in de goedkoopste uren van de bekende prijzen (vandaag en, na ±13:00, morgen).
+Staat `vannacht` aan, dan moet de auto vol zijn vóór "Vannacht: auto vol om"
+(`input_datetime.energymix_auto_klaar_om`). Kan niet alles ingepland worden, dan kan de auto
+'s ochtends op Eco uit de accu laden, maar alleen als de zonprognose voor de rest van de dag genoeg is
+om dat weer aan te vullen.
 
 **Accu.** Energymix simuleert per kwartier het laadniveau, met de zonprognose en het gemiddelde
 huisverbruik per uur (dat leert hij zelf uit je metingen). Hij laadt alleen van het net als die
@@ -71,7 +72,9 @@ zet de accu dan op "keep batteries charged" met laadstroom 0: niet laden, niet o
     vrij(fase) = zekering (25 A) - marge (2 A) - (stroom op die fase - eigen deel van de accu)
 
 De krapste fase waar de Victron op laadt (`victron_phases`, bv. `1` of `1,2,3`) bepaalt de
-laadstroom. Zet iemand op één fase de oven aan, dan krijgt de accu op die fase minder. Daarbij:
+laadstroom. Zet iemand op één fase de oven aan, dan krijgt de accu op die fase minder. Zon die
+teruglevert telt mee als ruimte; valt de zon weg, dan regelt de Zappi terug en verlaagt de regelaar
+direct de laadstroom. Daarbij:
 - stappen van `dvcc_step_a` (standaard 10 A);
 - direct omlaag, maar pas na 2 minuten ruimte één stap omhoog;
 - minder ruimte dan de minimale laadstroom: 0 A (dan laadt de accu niet);

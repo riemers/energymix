@@ -80,16 +80,10 @@ HELPERS: list[Helper] = [
         _float, "Reserve bij terugleveren",
     ),
     Helper(
-        "input_number.energymix_auto_minimum", "car_min_range_km",
-        {"type": "input_number/create", "name": "Energymix auto minimum", "min": 0, "max": 450, "step": 10,
-         "unit_of_measurement": "km", "mode": "slider", "icon": "mdi:car-electric", "initial": 250},
-        _float, "Auto altijd minimaal",
-    ),
-    Helper(
         "input_datetime.energymix_auto_klaar_om", "car_ready_time",
         {"type": "input_datetime/create", "name": "Energymix auto klaar om", "has_date": False, "has_time": True,
          "icon": "mdi:clock-check", "initial": "07:30:00"},
-        _time, "Auto klaar om",
+        _time, "Vannacht: auto vol om",
     ),
     Helper(
         "input_select.energymix_seizoen", "season_mode",

@@ -45,7 +45,7 @@ EDITABLE = [
     ("zappi_status_entity", "Zappi status", "entity", "Auto"),
     ("zappi_plug_entity", "Zappi stekker", "entity", "Auto"),
     ("zappi_max_w", "Zappi max vermogen (W)", "number", "Auto"),
-    ("car_opportunistic_price", "Boven minimum alleen laden onder (€)", "number", "Auto"),
+    ("charge_speed_km_per_hour", "Laadsnelheid auto (km per uur)", "number", "Auto"),
     ("arbitrage_min_spread", "Min. winst laden van net (€/kWh)", "number", "Strategie"),
     ("export_min_spread", "Min. winst terugleveren (€/kWh)", "number", "Strategie"),
     ("roundtrip_efficiency", "Rendement accu heen en terug", "number", "Strategie"),
