@@ -335,6 +335,7 @@ def make_plan(
     summary: dict = {}
     if cfg.has_battery and state.soc is not None:
         summary = _plan_battery(cfg, tz, now, slots, plans, state, fc, season, car)
+        summary["runway"] = battery_runway(cfg, tz, now, plans, state.soc)
         if summary.get("hold_slots") and summary.get("empty_why"):
             notes.append(f"Accu bewaren: {summary['empty_why']}")
     elif cfg.has_battery:
@@ -712,6 +713,68 @@ def _eco_conditions(cfg, state: State, season: dict) -> tuple[bool, str]:
 
 
 # --------------------------------------------------------------------------- accu
+
+
+RUNWAY_DAYS = 7
+# (huis x, zon x): verwacht, krap (meer verbruik, minder zon) en ruim
+RUNWAY_CASES = {"expected": (1.0, 1.0), "early": (1.2, 0.7), "late": (0.85, 1.3)}
+
+
+def battery_runway(cfg, tz, now: datetime, plans: list[SlotPlan], soc: float) -> dict:
+    """Wanneer is de accu leeg (ESS-minimum) als er geen auto laadt en Energymix niets stuurt?
+
+    Alleen huis en zon: de zon laadt bij, het huis trekt eraf. Binnen de planning met de
+    prognose; daarna herhaalt hij het laatst bekende dagpatroon (verbruik en zon per uur).
+    Met marge: krap = 20% meer verbruik en 30% minder zon, ruim = 15% minder en 30% meer zon.
+    """
+    cap = cfg.battery_capacity_kwh
+    if not plans or not cap:
+        return {}
+    eff_c = cfg.charge_efficiency if 0 < cfg.charge_efficiency <= 1 else 0.93
+    eff_rt = cfg.roundtrip_efficiency if 0 < cfg.roundtrip_efficiency <= 1 else 0.85
+    eff_d = min(1.0, eff_rt / eff_c)
+    floor_e = cap * 0.10
+
+    # Stappen: (start, uren, huis kW, zon kW); na de planning het laatst bekende patroon per uur
+    steps = []
+    pattern: dict[int, tuple[float, float]] = {}
+    for sp in plans:
+        h = _hours(sp)
+        start = max(sp.start, now)
+        hrs = (sp.end - start).total_seconds() / 3600
+        if h <= 0 or hrs <= 0:
+            continue
+        house_kw, pv_kw = sp.house_kwh / h, sp.pv_kwh / h
+        steps.append((start, hrs, house_kw, pv_kw))
+        pattern[sp.start.astimezone(tz).hour] = (house_kw, pv_kw)
+    t = plans[-1].end
+    end = now + timedelta(days=RUNWAY_DAYS)
+    default = (cfg.house_load_default_w / 1000, 0.0)
+    while t < end:
+        house_kw, pv_kw = pattern.get(t.astimezone(tz).hour, default)
+        steps.append((t, 1.0, house_kw, pv_kw))
+        t += timedelta(hours=1)
+
+    out: dict = {"basis_until": plans[-1].end.isoformat()}
+    for name, (fh, fp) in RUNWAY_CASES.items():
+        e = cap * soc / 100
+        at_ = None
+        if e <= floor_e:
+            at_ = now
+        for start, hrs, house_kw, pv_kw in steps:
+            if at_ is not None:
+                break
+            net_kw = pv_kw * fp - house_kw * fh
+            if net_kw >= 0:
+                e = max(e, min(cap, e + net_kw * hrs * eff_c))  # zon laadt bij tot vol
+                continue
+            drain = -net_kw / eff_d  # kWh uit de accu per uur
+            left_h = (e - floor_e) / drain
+            if left_h <= hrs:
+                at_ = start + timedelta(hours=left_h)
+            e -= drain * hrs
+        out[name] = at_.isoformat() if at_ else None
+    return out
 
 
 @dataclass

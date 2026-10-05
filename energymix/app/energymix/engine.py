@@ -428,6 +428,14 @@ class Engine:
         }
         if plan.summary.get("target_reached_at"):
             sensors[f"sensor.{p}_accu_vol_om"] = (plan.summary["target_reached_at"], {"friendly_name": "Energymix accu op doel om", "device_class": "timestamp"})
+        rw = plan.summary.get("runway") or {}
+        if rw:
+            sensors[f"sensor.{p}_accu_leeg_om"] = (
+                rw.get("expected") or "unknown",
+                {"friendly_name": "Energymix accu leeg om (zonder auto)", "device_class": "timestamp",
+                 "icon": "mdi:battery-clock", "krap": rw.get("early"), "ruim": rw.get("late"),
+                 "uitleg": "alleen huis en zon; krap = 20% meer verbruik en 30% minder zon; leeg = 10%"},
+            )
         if plan.car.full_at:
             sensors[f"sensor.{p}_auto_vol_om"] = (plan.car.full_at.isoformat(), {"friendly_name": "Energymix auto vol om", "device_class": "timestamp", "auto": plan.car.name})
         for eid, (state, attrs) in sensors.items():

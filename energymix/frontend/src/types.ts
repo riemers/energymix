@@ -92,6 +92,7 @@ export interface Summary {
   empty_why?: string;
   house_kwh_24h?: number;
   pv_kwh_24h?: number;
+  runway?: { expected?: string | null; early?: string | null; late?: string | null; basis_until?: string };
 }
 
 export interface Plan {

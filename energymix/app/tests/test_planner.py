@@ -426,3 +426,21 @@ def test_no_night_hold_when_battery_easily_lasts():
                      Forecast(pv_kwh=pv))
     assert not any(s.dvcc_current == 0 and s.ess_state == ESS_KEEP_CHARGED for s in plan.slots)
     assert plan.summary["empty_at"] is None
+
+
+def test_battery_runway_without_car_has_margin():
+    # Geen zon, huis 600 W, accu 84% van 47 kWh: ruim 2 dagen; krap eerder, ruim later
+    prices = quarters(at(22, day=5), [0.30] * 104)
+    plan = make_plan(cfg(house_load_default_w=600), prices, State(soc=84), at(22, 5, day=5))
+    r = plan.summary["runway"]
+    exp, early, late = (datetime.fromisoformat(r[k]) for k in ("expected", "early", "late"))
+    assert early < exp < late
+    hours = (exp - at(22, 5, day=5)).total_seconds() / 3600
+    assert 45 < hours < 60
+
+
+def test_battery_runway_sun_refills():
+    prices = quarters(at(22, day=5), [0.30] * 104)
+    pv = {s.start: (2.0 if 10 <= s.start.astimezone(TZ).hour < 16 else 0.0) for s in prices}
+    plan = make_plan(cfg(house_load_default_w=600), prices, State(soc=50), at(22, 5, day=5), Forecast(pv_kwh=pv))
+    assert plan.summary["runway"]["expected"] is None

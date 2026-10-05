@@ -46,7 +46,8 @@ automations gebruiken. Ze zijn hetzelfde als de schakelaars in het Energymix-das
 
 En deze sensoren: `sensor.energymix_status` (het verhaal), `sensor.energymix_prijs_nu`,
 `sensor.energymix_accu_modus`, `sensor.energymix_zappi_plan`, `sensor.energymix_seizoen`,
-`sensor.energymix_besparing`, `sensor.energymix_accu_vol_om`, `sensor.energymix_auto_vol_om` en
+`sensor.energymix_besparing`, `sensor.energymix_accu_vol_om`, `sensor.energymix_accu_leeg_om`
+(wanneer de accu leeg is als er geen auto laadt; attributen `krap` en `ruim` geven de marge), `sensor.energymix_auto_vol_om` en
 `binary_sensor.energymix_terugleveren`.
 
 ## Hoe hij beslist
