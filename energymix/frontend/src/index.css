@@ -1,0 +1,25 @@
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --color-ink-950: #0b0f17;
+  --color-ink-900: #111723;
+  --color-ink-800: #18202f;
+  --color-ink-700: #243044;
+  --color-neg: #facc15;
+  --color-cheap: #34d399;
+  --color-mid: #60a5fa;
+  --color-high: #f87171;
+}
+
+html,
+body {
+  background: var(--color-ink-950);
+  color: #e5e7eb;
+  font-feature-settings: "tnum";
+  -webkit-font-smoothing: antialiased;
+}
+
+.card {
+  @apply rounded-2xl border border-white/5 bg-ink-900/80 p-4 shadow-xl shadow-black/20 backdrop-blur;
+}

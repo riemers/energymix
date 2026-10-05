@@ -1,0 +1,4 @@
+frontend/node_modules
+app/energymix/static
+app/tests
+**/__pycache__
