@@ -19,6 +19,8 @@ async def main() -> None:
         level=os.environ.get("LOG_LEVEL", "INFO"),
         format="%(asctime)s %(levelname)s %(name)s: %(message)s",
     )
+    # Elke dashboard-refresh loggen is ruis; fouten komen nog wel door
+    logging.getLogger("aiohttp.access").setLevel(logging.WARNING)
     cfg = Config.load()
     log = logging.getLogger("energymix")
     log.info("Energymix start in %s mode", "SHADOW" if cfg.shadow else "LIVE")
