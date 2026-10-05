@@ -48,6 +48,8 @@ def tell(plan: Plan | None, state: State | None, tz: ZoneInfo) -> list[str]:
 
     # Auto
     car = plan.car
+    if car.boost:
+        out.append("Snel laden staat aan: de auto laadt nu op Fast tot hij vol is.")
     if car.name:
         if cur.zappi_mode == "Fast":
             out.append(f"De {car.name} laadt nu ({cur.reasons.get('zappi', '')}).")

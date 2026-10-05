@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.2.11
+- Nieuwe schakelaar "Auto nu snel laden" (`input_boolean.energymix_auto_snel_laden`, standaard uit):
+  Zappi meteen op Fast tot de auto vol is, boven alle planning. Gaat vanzelf weer uit als de auto vol
+  is of de stekker eruit gaat (aanzetten vóór het insteken mag). Handig voor HomeKit
+
 ## 0.2.10
 - Veiligheid: bij uitzetten van "Aansturen" en bij stoppen/herstarten van de add-on worden de
   Victron-instellingen die live stonden teruggezet naar standaard (ESS zelfverbruik, DVCC max,

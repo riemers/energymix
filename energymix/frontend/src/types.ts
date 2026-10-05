@@ -58,6 +58,7 @@ export interface CarPlan {
   need_minutes: number;
   eco_km: number;
   eco_reason: string;
+  boost: boolean;
 }
 
 export interface Season {

@@ -151,6 +151,7 @@ class CarPlan:
     need_minutes: float = 0.0
     eco_km: float = 0.0
     eco_reason: str = ""
+    boost: bool = False
     sessions: list[dict] = field(default_factory=list)
 
     def to_dict(self) -> dict:
@@ -357,7 +358,8 @@ def _car_sessions(plans: list[SlotPlan], car: CarPlan, state: State, speed: floa
             kind = (
                 "vannacht" if why.startswith("vannacht") else
                 "goedkoopst" if why.startswith("goedkoopste") else
-                "eco" if why.startswith("ochtend-eco") else "handmatig"
+                "eco" if why.startswith("ochtend-eco") else
+                "snel" if why.startswith("snel laden") else "handmatig"
             )
             if cur and cur["mode"] == mode and cur["end"] == sp.start.isoformat():
                 cur["end"] = sp.end.isoformat()
@@ -439,6 +441,8 @@ def _plan_car(cfg, tz, now, slots, plans, state: State, notes, season: dict | No
             sp.reasons["zappi"] = "geen auto aangesloten"
         return cp
 
+    if cfg.car_boost:
+        mode = "boost"
     manual = {"fast": ("Fast", "laadmodus fast"), "slow": ("Eco", "laadmodus slow"), "ecoa": ("Eco", "laadmodus EcoA")}
     if mode in manual:
         m, why = manual[mode]
@@ -447,7 +451,7 @@ def _plan_car(cfg, tz, now, slots, plans, state: State, notes, season: dict | No
             if m == "Fast":
                 sp.car_kwh = cfg.zappi_max_w / 1000 * _hours(sp)
         return cp
-    if mode != "auto":
+    if mode not in ("auto", "boost"):
         for sp in plans:
             sp.reasons["zappi"] = f"onbekende laadmodus '{mode}': niets doen"
         return cp
@@ -473,6 +477,26 @@ def _plan_car(cfg, tz, now, slots, plans, state: State, notes, season: dict | No
     if state.car_full:
         cp.need_km = cp.need_minutes = 0.0
     cp.need_full_kwh = cp.need_km * cp.kwh_per_km
+
+    if mode == "boost":
+        # Handmatig "nu snel laden": Fast vanaf nu tot vol, boven alle planning.
+        # Onbekende auto: Fast tot de Zappi "Complete" meldt.
+        left = 0.0 if state.car_full else (cp.need_minutes if active else float("inf"))
+        for sp in plans:
+            mins = min(_eff_minutes(sp, now), left)
+            if mins > 0.5:
+                sp.zappi_mode = "Fast"
+                sp.car_kwh = cfg.zappi_max_w / 1000 * mins / 60
+                cp.planned_kwh += sp.car_kwh
+                sp.reasons["zappi"] = "snel laden aangezet: nu Fast tot de auto vol is"
+                left -= mins
+                if active and left <= 0.5:
+                    cp.full_at = max(sp.start, now) + timedelta(minutes=mins)
+            else:
+                sp.zappi_mode = "Eco+"
+                sp.reasons["zappi"] = "snel laden: auto vol, daarna Eco+"
+        cp.boost = True
+        return cp
 
     # a. Ochtend-eco: accu (al behoorlijk vol) + een echte zonnedag -> auto op Eco,
     #    Victron op all loads. Wat dat oplevert gaat af van de Fast-laadtijd.

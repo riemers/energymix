@@ -58,6 +58,11 @@ HELPERS: list[Helper] = [
         _bool, "Aansturen (hoofdschakelaar)",
     ),
     Helper(
+        "input_boolean.energymix_auto_snel_laden", "car_boost",
+        {"type": "input_boolean/create", "name": "Energymix auto snel laden", "icon": "mdi:car-electric"},
+        _bool, "Auto nu snel laden (tot vol)",
+    ),
+    Helper(
         "input_boolean.energymix_terugleveren", "export_enabled",
         {"type": "input_boolean/create", "name": "Energymix terugleveren", "icon": "mdi:transmission-tower-export"},
         _bool, "Terugleveren bij pieken",

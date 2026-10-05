@@ -6,6 +6,7 @@ const KIND: Record<string, string> = {
   goedkoopst: "goedkoopste uren",
   vannacht: "vannacht vol",
   eco: "zon/accu",
+  snel: "snel laden (handmatig)",
   handmatig: "handmatig",
 };
 
