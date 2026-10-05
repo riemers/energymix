@@ -59,8 +59,19 @@ export default function Controls({ status, onStatus }: Props) {
         <Field label="Reserve bij terugleveren">
           <Slider value={Number(h.battery_reserve_soc?.value ?? 30)} min={10} max={80} step={5} unit="%" accent="#fbbf24" onCommit={(v) => set("battery_reserve_soc", v)} />
         </Field>
-        <Field label="Vannacht vol om">
-          <label className="flex items-center gap-2 rounded-lg bg-white/5 px-3 py-1.5 text-sm">
+        <Field label="Laadmoment auto">
+          <Segmented
+            value={(h.car_window?.value as "auto" | "night" | "day") ?? "auto"}
+            onChange={(v) => set("car_window", v)}
+            options={[
+              { value: "auto", label: "Goedkoopst" },
+              { value: "night", label: <><Moon size={13} /> Nacht</> },
+              { value: "day", label: <><Sun size={13} /> Dag</> },
+            ]}
+          />
+        </Field>
+        <Field label={<span>Vol vóór<span className="block text-[10px] text-slate-500">alleen met "vannacht" (nu {status.state?.vannacht ? "aan" : "uit"})</span></span>}>
+          <label className={`flex items-center gap-2 rounded-lg bg-white/5 px-3 py-1.5 text-sm ${status.state?.vannacht ? "" : "opacity-50"}`}>
             <input
               type="time"
               defaultValue={String(h.car_ready_time?.value ?? "07:30")}
@@ -117,7 +128,7 @@ function Row({ title, sub, right, highlight }: { title: string; sub: string; rig
   );
 }
 
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
+function Field({ label, children }: { label: React.ReactNode; children: React.ReactNode }) {
   return (
     <div className="grid grid-cols-[8.5rem_1fr] items-center gap-3">
       <span className="text-sm text-slate-300">{label}</span>

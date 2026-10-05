@@ -366,3 +366,20 @@ def test_planning_uses_full_victron_charge_power_not_learned():
     plan = make_plan(cfg(house_load_default_w=1500, victron_phases="1,2,3"), prices, State(soc=30), at(0, 0),
                      Forecast(battery_charge_w=3000))
     assert plan.now.ess_state == 9 and plan.now.dvcc_current >= 120
+
+
+def test_evening_plugin_waits_for_cheaper_day_tomorrow():
+    # 20:00 ingestoken. Vannacht 0.21, morgen 12-15u 0.14: automatisch wacht hij tot morgen
+    p = [0.30] * 20 + [0.30] * 2 + [0.21] * 9 + [0.30] * 5 + [0.14] * 3 + [0.30] * 9
+    prices = hourly(at(0), p)  # 48 uur vanaf 6 okt 00:00
+    st = State(zappi_plug="EV Connected", carcharger_mode="auto", cars=car("270"))  # 2 uur laden
+    plan = make_plan(cfg(), prices, st, at(20))
+    fast = [s.start for s in plan.slots if s.zappi_mode == "Fast"]
+    assert fast[0] == at(12, day=7)
+    kinds = {o["kind"]: o["avg_price"] for o in plan.car.window_options}
+    assert kinds == {"night": 0.21, "day": 0.14}
+    # Zelf "'s nachts" gekozen: dan toch vannacht
+    plan = make_plan(cfg(car_window="night"), prices, st, at(20))
+    fast = [s.start.astimezone(TZ).hour for s in plan.slots if s.zappi_mode == "Fast"]
+    assert all(h >= 22 or h < 7 for h in fast) and len(fast) == 2
+    assert "'s nachts" in next(s for s in plan.slots if s.zappi_mode == "Fast").reasons["zappi"]

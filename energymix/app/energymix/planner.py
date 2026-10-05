@@ -168,6 +168,8 @@ class CarPlan:
     speed_kmh: float | None = None
     speed_source: str = "ingesteld"
     time_source: str = "berekend"
+    window_mode: str = "auto"
+    window_options: list[dict] = field(default_factory=list)
     sessions: list[dict] = field(default_factory=list)
 
     def to_dict(self) -> dict:
@@ -553,9 +555,23 @@ def _plan_car(cfg, tz, now, slots, plans, state: State, notes, season: dict | No
     cp.eco_km = eco_km
 
     # b. Rest in de goedkoopste uren (Fast van het net)
-    cands = [sp for sp in plans if (deadline is None or sp.start < deadline) and sp.zappi_mode != "Eco"]
+    base = [sp for sp in plans if (deadline is None or sp.start < deadline) and sp.zappi_mode != "Eco"]
     rest_km = max(0.0, cp.need_km - eco_km)
     left = (cp.need_minutes * rest_km / cp.need_km) if cp.need_km else 0.0
+    # Vergelijk: goedkoopste blok 's nachts vs overdag (binnen de bekende prijzen)
+    if left > 0.5:
+        for kind in ("night", "day"):
+            w = _best_window([sp for sp in base if _part_of_day(sp, tz) == kind], left, now)
+            if w:
+                starts = sorted(w[0])
+                last = max(starts)
+                end = next(sp for sp in base if sp.start == last)
+                end_t = max(end.start, now) + timedelta(minutes=w[0][last])
+                cp.window_options.append({
+                    "kind": kind, "start": starts[0].isoformat(), "end": end_t.isoformat(), "avg_price": round(w[1], 4),
+                })
+    cp.window_mode = cfg.car_window
+    cands = base if cfg.car_window not in ("night", "day") else [sp for sp in base if _part_of_day(sp, tz) == cfg.car_window]
     chosen: dict[datetime, float] = {}  # slot -> minuten laden
     if left > 0.5:
         # Eén aaneengesloten blok (zoals Node-RED): geen losse kwartieren, geen gependel
@@ -598,7 +614,7 @@ def _plan_car(cfg, tz, now, slots, plans, state: State, notes, season: dict | No
         sp.reasons["zappi"] = (
             f"vannacht: vol vóór {_fmt(deadline, tz, now)}, goedkoopste blok voor {need_txt} (€{sp.price:.3f})"
             if deadline
-            else f"goedkoopste blok voor {need_txt} (€{sp.price:.3f})"
+            else f"goedkoopste blok {WINDOW_TXT.get(cfg.car_window, '')}voor {need_txt} (€{sp.price:.3f})"
         )
         cp.full_at = start_at + timedelta(minutes=mins)
     if not chosen and eco_km > 0.5 and eco_km >= cp.need_km - 0.5:
@@ -612,7 +628,20 @@ def _plan_car(cfg, tz, now, slots, plans, state: State, notes, season: dict | No
     return cp
 
 
+WINDOW_TXT = {"night": "'s nachts ", "day": "overdag "}
 CAR_STICKY_EUR = 0.01  # doorladen tenzij een later blok meer dan 1 ct/kWh goedkoper is
+
+
+NIGHT_START, DAY_START = 22, 7  # 's nachts 22-07, overdag 07-19 (19-22 telt als avond)
+
+
+def _part_of_day(sp: SlotPlan, tz) -> str:
+    h = sp.start.astimezone(tz).hour
+    if h >= NIGHT_START or h < DAY_START:
+        return "night"
+    if h < 19:
+        return "day"
+    return "evening"
 
 
 def _eff_minutes(sp: SlotPlan, now: datetime) -> float:
