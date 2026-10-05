@@ -96,7 +96,8 @@ laadstroom. Zet iemand op één fase de oven aan, dan krijgt de accu op die fase
 teruglevert telt mee als ruimte; valt de zon weg, dan regelt de Zappi terug en verlaagt de regelaar
 direct de laadstroom. Daarbij:
 - stappen van `dvcc_step_a` (standaard 10 A);
-- direct omlaag, maar pas na 2 minuten ruimte één stap omhoog;
+- direct omlaag; omhoog pas na 2 minuten ruimte, dan met de helft van het verschil;
+- in een goedkoop laad-kwartier mag hij tot DVCC max als de fases dat toelaten (sneller vol, zelfde prijs);
 - minder ruimte dan de minimale laadstroom: 0 A (dan laadt de accu niet);
 - regelt de Zappi zichzelf terug (Fast, maar minder dan `zappi_max_w * 0,85`), dan telt het tekort
   per fase als bezet. De auto gaat voor en de accu neemt die ruimte niet in.

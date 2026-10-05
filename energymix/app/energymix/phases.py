@@ -41,11 +41,14 @@ def battery_ac_limit_w(cfg: Config, others_a: list[float]) -> float:
     return per_phase * cfg.grid_voltage * len(vp)
 
 
-def expected_others_a(cfg: Config, house_w: float, car_w: float) -> list[float]:
-    """Verwachte stroom per fase voor de planner: huis gelijk verdeeld, auto over zijn fases."""
+def expected_others_a(cfg: Config, house_w: float, car_w: float, pv_w: float = 0.0) -> list[float]:
+    """Verwachte stroom per fase voor de planner: huis en zon gelijk verdeeld, auto over zijn fases.
+
+    Zon levert op dezelfde fases terug en geeft dus ruimte (zoals de zekering het ziet).
+    """
     n = max(1, cfg.grid_phases)
     v = cfg.grid_voltage
-    out = [house_w / n / v] * n
+    out = [(house_w - pv_w) / n / v] * n
     zp = zappi_phase_idx(cfg)
     for p in zp:
         out[p] += car_w / len(zp) / v

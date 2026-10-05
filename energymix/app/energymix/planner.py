@@ -739,7 +739,8 @@ def _plan_battery(cfg, tz, now, slots, plans: list[SlotPlan], state: State, fc: 
         h = _hours(sp)
         car_w = sp.car_kwh / h * 1000 if h else 0
         house_w = sp.house_kwh / h * 1000 if h else 0
-        ac_limit = battery_ac_limit_w(cfg, expected_others_a(cfg, house_w, car_w))
+        pv_w = sp.pv_kwh / h * 1000 if h else 0
+        ac_limit = battery_ac_limit_w(cfg, expected_others_a(cfg, house_w, car_w, pv_w))
         charge_cap.append(max(0.0, min(charge_w, ac_limit * eff_c)) / 1000 * h)
     max_e = [cap if sp.price < 0 else target_e for sp in plans]
     export_cap = [

@@ -62,13 +62,26 @@ def test_no_room_means_zero_not_minimum():
     assert a == 0 and "fase vol" in why
 
 
-def test_raises_slowly_one_step_after_delay():
+def test_raises_after_delay_by_half_the_gap():
     r = Regulator(cfg())
     r.st.current_a = 40
-    st = State(grid_w=1, battery_w=0, phase_a=[1, 1, 1])
+    st = State(grid_w=1, battery_w=0, phase_a=[1, 1, 1])  # L1: 22 A vrij -> 97 A -> doel 90
     assert r.step(slot(), st, 0)[0] == 40
     assert r.step(slot(), st, RAISE_AFTER - 1)[0] == 40
-    assert r.step(slot(), st, RAISE_AFTER + 1)[0] == 50
+    assert r.step(slot(), st, RAISE_AFTER + 1)[0] == 60  # helft van 50, afgerond op 10
+    assert r.step(slot(), st, 2 * RAISE_AFTER + 2)[0] == 70
+    assert r.step(slot(), st, 3 * RAISE_AFTER + 3)[0] == 80
+
+
+def test_more_room_than_planned_charges_faster():
+    # Jouw situatie: plan 70 A (ingeschat zonder zon), maar gemeten 12.9 A vrij op de krapste fase
+    r = Regulator(cfg(victron_phases="1,2,3"))
+    r.st.current_a = 70
+    st = State(grid_w=1, battery_w=3800, phase_a=[13.7, 14.6, 16.0], zappi_mode="Fast",
+               zappi_status="Charging", zappi_w=11400)
+    r.step(slot(dvcc=70), st, 0)
+    a, why = r.step(slot(dvcc=70), st, RAISE_AFTER + 1)
+    assert a > 70 and "max 150 A" in why
 
 
 def test_zappi_throttling_counts_as_occupied():
