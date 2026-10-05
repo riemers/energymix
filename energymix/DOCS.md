@@ -61,15 +61,26 @@ verliezen. Vult de zon de accu toch al, dan laadt hij niet. Bij een negatieve pr
 **Terugleveren.** Alleen als de schakelaar aan staat, het verschil na verliezen minstens
 `export_min_spread` per kWh is, de auto niet laadt, en nooit onder de reserve.
 
-**Laadstroom-regelaar.** Als de accu van het net laadt, kijkt een snelle regeling elke 30 s naar
-de ruimte op je aansluiting: `grid_max_import_w - grid_margin_w - wat de rest trekt`. Daarbij:
+**Bewaren.** In een goedkoop uur kan het voordeliger zijn om het huis van het net te laten draaien
+en de accu te sparen voor de dure avond (vooral in de winter, als de nacht goedkoop is). Energymix
+zet de accu dan op "keep batteries charged" met laadstroom 0: niet laden, niet ontladen.
+
+**Laadstroom-regelaar (per fase).** Als de accu van het net laadt, kijkt een snelle regeling elke
+30 s **per fase** hoeveel ruimte er is:
+
+    vrij(fase) = zekering (25 A) - marge (2 A) - (stroom op die fase - eigen deel van de accu)
+
+De krapste fase waar de Victron op laadt (`victron_phases`, bv. `1` of `1,2,3`) bepaalt de
+laadstroom. Zet iemand op één fase de oven aan, dan krijgt de accu op die fase minder. Daarbij:
 - stappen van `dvcc_step_a` (standaard 10 A);
 - direct omlaag, maar pas na 2 minuten ruimte één stap omhoog;
-- regelt de Zappi zichzelf terug (Fast, maar minder dan `zappi_max_w * 0,85`), dan telt het
-  tekort als bezet. De auto gaat voor en de accu neemt die ruimte niet in.
+- minder ruimte dan de minimale laadstroom: 0 A (dan laadt de accu niet);
+- regelt de Zappi zichzelf terug (Fast, maar minder dan `zappi_max_w * 0,85`), dan telt het tekort
+  per fase als bezet. De auto gaat voor en de accu neemt die ruimte niet in.
 
-Hiervoor zijn `grid_power_entity`, `battery_power_entity` en `zappi_power_entity` nodig. Kies ze
-onder Instellingen in het dashboard.
+Stel onder Instellingen → Net de sensoren per fase in (`grid_l1_entity` t/m `grid_l3_entity`, in W,
+kW of A, positief = afname). Zonder fasesensoren neemt de regelaar aan dat het verbruik gelijk over de
+fases verdeeld is. Dat is minder veilig, dus stel ze in voordat je `dvcc` live zet.
 
 **Seizoenpatroon.** Energymix vergelijkt de gemiddelde prijs van 11-16u met die van 0-6u over de
 afgelopen week. Is de middag goedkoper, dan is het een zomerpatroon; is de nacht goedkoper, een

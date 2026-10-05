@@ -16,6 +16,7 @@ from .config import Config
 from .executor import Executor
 from .forecast import house_per_slot, pv_per_slot
 from .ha import HomeAssistant
+from .phases import headroom_a, victron_phase_idx
 from .planner import CarState, Forecast, Plan, State, make_plan
 from .prices import PriceSlot, slot_at
 from .regulator import Regulator
@@ -109,9 +110,24 @@ class Engine:
             unit = str(self.ha.attributes(eid).get("unit_of_measurement", "")).lower() if eid else ""
             if unit == "kw" and getattr(st, attr) is not None:
                 setattr(st, attr, getattr(st, attr) * 1000)
+        # Stroom per fase (A); sensoren mogen W, kW of A zijn
+        phase_ents = [c.grid_l1_entity, c.grid_l2_entity, c.grid_l3_entity][: max(1, c.grid_phases)]
+        if any(phase_ents):
+            st.phase_a = [self._phase_current(eid) for eid in phase_ents]
         if st.house_w is None and st.grid_w is not None:
             st.house_w = (st.pv_w or 0) + st.grid_w - (st.battery_w or 0) - (st.zappi_w or 0)
         return st
+
+    def _phase_current(self, eid: str) -> float | None:
+        val = self.ha.number(eid)
+        if val is None:
+            return None
+        unit = str(self.ha.attributes(eid).get("unit_of_measurement", "")).lower()
+        if unit == "a":
+            return val
+        if unit == "kw":
+            val *= 1000
+        return val / self.cfg.grid_voltage
 
     def forecast(self, now: datetime) -> Forecast:
         c = self.cfg
@@ -280,11 +296,21 @@ class Engine:
                 "connected": cs.connected, "home": cs.home,
             })
         cur = slot_at(self.prices, datetime.now(timezone.utc))
+        reg = self.regulator.st.to_dict()
+        if not reg["phase_free_a"] and st.phase_a and all(x is not None for x in st.phase_a):
+            # Ook buiten het laden laten zien hoeveel ruimte elke fase heeft (zonder de accu zelf)
+            vp = victron_phase_idx(self.cfg)
+            batt_ac = max(0.0, st.battery_w or 0.0) / (self.cfg.charge_efficiency or 0.93)
+            others = [float(x) - (batt_ac / len(vp) / self.cfg.grid_voltage if i in vp else 0) for i, x in enumerate(st.phase_a)]
+            reg["phase_free_a"] = [round(x, 1) for x in headroom_a(self.cfg, others)]
         return {
             "ts": datetime.now(timezone.utc).isoformat(),
             "soc": st.soc, "pv_w": st.pv_w, "grid_w": st.grid_w, "battery_w": st.battery_w,
             "house_w": st.house_w, "zappi_w": st.zappi_w, "zappi_mode": st.zappi_mode,
             "zappi_status": st.zappi_status, "zappi_plug": st.zappi_plug, "cars": cars,
             "price": cur.price if cur else None,
-            "regulator": self.regulator.st.to_dict(),
+            "phase_a": [round(x, 1) if x is not None else None for x in st.phase_a],
+            "phase_max_a": self.cfg.grid_phase_max_a,
+            "victron_phases": [p + 1 for p in victron_phase_idx(self.cfg)],
+            "regulator": reg,
         }

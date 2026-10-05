@@ -84,7 +84,9 @@ def test_no_grid_charge_when_sun_fills_battery():
 def test_grid_charge_switch_off():
     prices = hourly(at(0), [0.25, 0.05, 0.05] + [0.45] * 21)
     plan = make_plan(cfg(grid_charge_enabled=False, house_load_default_w=2000), prices, State(soc=20), at(0, 30))
-    assert all(s.ess_state == ESS_OPTIMIZED for s in plan.slots)
+    # Niet van het net laden; bewaren (laadstroom 0) mag wel
+    assert plan.summary["grid_charge_kwh"] == 0
+    assert all(s.dvcc_current == 0 for s in plan.slots if s.ess_state == ESS_KEEP_CHARGED)
 
 
 def test_export_on_big_spread_keeps_reserve():

@@ -19,7 +19,15 @@ const LANES: { comp: string; label: string; color: (s: SlotPlan) => string | nul
     comp: "ess",
     label: "Accu",
     color: (s) =>
-      (s.setpoint_w ?? 0) < 0 ? "#fbbf24" : s.ess_state === 9 ? "#34d399" : s.ess_state === 10 ? IDLE : null,
+      (s.setpoint_w ?? 0) < 0
+        ? "#fbbf24"
+        : s.ess_state === 9 && s.dvcc_current === 0
+          ? "#818cf8"
+          : s.ess_state === 9
+            ? "#34d399"
+            : s.ess_state === 10
+              ? IDLE
+              : null,
   },
   {
     comp: "zappi",
@@ -247,7 +255,8 @@ function Legend() {
     ["var(--color-neg)", "negatief", "box"],
     ["var(--color-cheap)", "goedkoop", "box"],
     ["var(--color-high)", "duur", "box"],
-    ["#34d399", "accu verwacht", "line"],
+    ["#34d399", "accu verwacht / laden", "line"],
+    ["#818cf8", "accu bewaren", "box"],
     ["#fbbf24", "zon / terugleveren", "box"],
     ["#f472b6", "auto Fast", "box"],
     ["#a78bfa", "auto Eco", "box"],

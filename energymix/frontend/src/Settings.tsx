@@ -112,6 +112,9 @@ function FieldRow({ f, value, onChange }: { f: SettingField; value: string | num
             </option>
           ))}
         </select>
+      ) : f.kind === "text" ? (
+        <input type="text" value={String(value)} onChange={(e) => onChange(e.target.value)}
+          className="w-full rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm outline-none focus:border-emerald-400/50" />
       ) : (
         <input type="number" step="any" value={String(value)} onChange={(e) => onChange(Number(e.target.value))}
           className="w-full rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm tabular-nums outline-none focus:border-emerald-400/50" />
