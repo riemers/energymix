@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.2.13
+- Fix: kleine laadacties op 20 A (bv. om 16:00 net na het laden van de auto). De planning gebruikte
+  het "geleerde" laadvermogen, dat gemeten is terwijl de zon laadde (~3 kW) en dus te laag is; nu het
+  echte vermogen (DVCC max, begrensd per fase)
+- Geen mini-acties meer: laden onder de minimale laadstroom of terugleveren onder 0,5 kWh per kwartier
+  vervalt en het plan wordt opnieuw doorgerekend
+
 ## 0.2.12
 - Auto's leren: max actieradius = actieradius / accu% x laadlimiet (Tesla), gemiddeld over metingen en
   bewaard; ook "Complete" van de Zappi telt als meting. Vervangt de vaste max-km in de planning

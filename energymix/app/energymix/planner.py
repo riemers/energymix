@@ -353,6 +353,7 @@ def make_plan(
 
 
 ECO_KW = 3.7  # geschat laadvermogen op Eco (zon/accu)
+MIN_EXPORT_KWH = 0.5  # minder terugleveren in een slot is de moeite niet
 
 
 def _car_sessions(plans: list[SlotPlan], car: CarPlan, state: State, speed: float = 65.0, fast_kw: float = 11.0) -> list[dict]:
@@ -697,7 +698,9 @@ def _plan_battery(cfg, tz, now, slots, plans: list[SlotPlan], state: State, fc: 
     reserve_e = cap * cfg.battery_reserve_soc / 100
     target_e = cap * cfg.battery_target_soc / 100
     e0 = cap * state.soc / 100
-    charge_w = fc.battery_charge_w or cfg.dvcc_max_charge_current * cfg.battery_nominal_voltage * eff_c
+    # Laadvermogen van de accu: wat de Victron kan (DVCC max). Het "geleerde" vermogen uit de
+    # statistiek is meestal gemeten terwijl de zon laadde en dus te laag om mee te plannen.
+    charge_w = cfg.dvcc_max_charge_current * cfg.battery_nominal_voltage * eff_c
     n = len(plans)
 
     # Laadvermogen per slot: begrensd door de aansluiting als de auto laadt
@@ -868,6 +871,32 @@ def _plan_battery(cfg, tz, now, slots, plans: list[SlotPlan], state: State, fc: 
             )
             export_why[i] = f"terugleveren à €{plans[i].sell_price:.3f}, {later}: +€{per_kwh:.2f}/kWh"
         cur, cur_total = sim, total(sim)
+
+    # Geen mini-acties: een kwartier laden onder de minimale laadstroom, of een
+    # restje terugleveren, is de moeite niet en geeft alleen geschakel.
+    v_nom = cfg.battery_nominal_voltage
+    for _ in range(n):
+        tiny = None
+        for i in range(n):
+            h = _hours(plans[i])
+            g = min(gc[i], cur.imp[i])
+            if g > EPS and h and g * eff_c / h * 1000 / v_nom < cfg.dvcc_min_charge_current:
+                tiny = ("gc", i)
+                break
+            if ex[i] > EPS and 0 < cur.exp[i] and ex[i] < MIN_EXPORT_KWH:
+                tiny = ("ex", i)
+                break
+        if not tiny:
+            break
+        kind, i = tiny
+        if kind == "gc":
+            gc[i] = 0.0
+            charge_why.pop(i, None)
+        else:
+            ex[i] = 0.0
+            export_why.pop(i, None)
+        cur = simulate()
+        cur_total = total(cur)
 
     # Vertalen naar instellingen
     v = cfg.battery_nominal_voltage

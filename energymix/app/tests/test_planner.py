@@ -350,3 +350,19 @@ def test_uses_learned_max_and_car_time_to_full_while_charging():
     fast = [s for s in plan.slots if s.zappi_mode == "Fast"]
     assert sum((s.end - max(s.start, at(8))).total_seconds() for s in fast) == 3600
     assert "volgens de auto" in fast[0].reasons["zappi"]
+
+
+def test_no_tiny_grid_charge_near_target():
+    # 94.5% bij doel 95%: er past nog maar ~0.2 kWh in; dat niet op 20 A "afronden"
+    prices = hourly(at(0), [0.05] * 2 + [0.45] * 22)
+    plan = make_plan(cfg(house_load_default_w=1500), prices, State(soc=94.5), at(0, 0))
+    for s in plan.slots:
+        assert s.ess_state != 9 or s.dvcc_current == 0 or s.grid_charge_kwh * 0.93 / 1 * 1000 / 52 >= 19.5
+
+
+def test_planning_uses_full_victron_charge_power_not_learned():
+    # Geleerd vermogen (3 kW, gemeten met zon) mag de planning niet afknijpen
+    prices = hourly(at(0), [0.05] * 2 + [0.45] * 22)
+    plan = make_plan(cfg(house_load_default_w=1500, victron_phases="1,2,3"), prices, State(soc=30), at(0, 0),
+                     Forecast(battery_charge_w=3000))
+    assert plan.now.ess_state == 9 and plan.now.dvcc_current >= 120
