@@ -16,5 +16,6 @@ RUN pip3 install --no-cache-dir -r /tmp/requirements.txt
 COPY app/energymix ./energymix
 COPY --from=frontend /src/app/energymix/static ./energymix/static
 
-ENV PYTHONUNBUFFERED=1
+ENV PYTHONUNBUFFERED=1 \
+    S6_KEEP_ENV=1
 CMD ["python3", "-m", "energymix"]

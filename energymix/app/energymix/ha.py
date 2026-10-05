@@ -10,20 +10,37 @@ import asyncio
 import itertools
 import logging
 import os
+from pathlib import Path
 from typing import Any, Awaitable, Callable
 
 import aiohttp
 
 log = logging.getLogger(__name__)
 
+# s6-overlay (HA base images) wist de environment van het hoofdproces; de
+# originele variabelen staan dan nog wel in deze map.
+S6_ENV = Path("/run/s6/container_environment")
+
+
+def supervisor_token() -> str:
+    token = os.environ.get("SUPERVISOR_TOKEN") or os.environ.get("HASSIO_TOKEN") or ""
+    if token:
+        return token
+    for name in ("SUPERVISOR_TOKEN", "HASSIO_TOKEN"):
+        f = S6_ENV / name
+        if f.exists():
+            return f.read_text().strip()
+    return ""
+
 
 class HomeAssistant:
     def __init__(self, session: aiohttp.ClientSession, url: str = "", token: str = ""):
         self._session = session
-        sup = os.environ.get("SUPERVISOR_TOKEN", "")
         self.url = (url.rstrip("/") + "/api/websocket") if url else "http://supervisor/core/websocket"
         self.url = self.url.replace("https://", "wss://").replace("http://", "ws://")
-        self.token = token or sup
+        self.token = token or (supervisor_token() if not url else "")
+        if not self.token:
+            log.error("Geen HA-token: SUPERVISOR_TOKEN ontbreekt en ha_token is leeg")
         self.states: dict[str, dict[str, Any]] = {}
         self.connected = asyncio.Event()
         self._ws: aiohttp.ClientWebSocketResponse | None = None
@@ -65,7 +82,8 @@ class HomeAssistant:
                 await ws.send_json({"type": "auth", "access_token": self.token})
                 msg = await ws.receive_json()
             if msg.get("type") != "auth_ok":
-                raise PermissionError(f"HA auth mislukt: {msg}")
+                hint = "token leeg" if not self.token else f"token van {len(self.token)} tekens geweigerd"
+                raise PermissionError(f"HA auth mislukt ({hint}, {self.url}): {msg.get('message')}")
             reader = asyncio.create_task(self._reader(ws))
             try:
                 states = await self._call({"type": "get_states"})
