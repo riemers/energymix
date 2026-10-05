@@ -814,9 +814,11 @@ def _plan_battery(cfg, tz, now, slots, plans: list[SlotPlan], state: State, fc: 
         (cfg.export_max_w / 1000 * _hours(sp)) if (cfg.export_enabled and sp.car_kwh <= EPS and sp.zappi_mode != "Fast") else 0.0
         for sp in plans
     ]
-    # Waarde van energie die aan het eind nog in de accu zit: wat bijladen dan kost
+    # Waarde van energie die aan het eind nog in de accu zit: wat die later bespaart
+    # (goedkope prijs, na ontlaadverlies). Voorzichtig gerekend, anders lijkt "bewaren"
+    # tot na de planning altijd winst en gaat hij 's nachts zonder reden bewaren.
     q = sorted(sp.price for sp in plans) or [0.2]
-    terminal_value = q[len(q) // 4] / eff_c
+    terminal_value = q[len(q) // 4] * eff_d
 
     # Ochtend-eco (door de autoplanning gekozen): accu/zon → auto
     eco = [sp.car_eco_kwh for sp in plans]
@@ -911,6 +913,12 @@ def _plan_battery(cfg, tz, now, slots, plans: list[SlotPlan], state: State, fc: 
                 hold_blocks.append(block)
                 break
             j += 1
+    def via_export(sim: _Sim, skip, applied: float) -> bool:
+        """Komt de winst vooral uit extra terugleveren later? Dan is het eigenlijk
+        inkopen om te verkopen, en geldt de (hogere) drempel voor terugleveren."""
+        extra = sum(sim.exp[k] - cur.exp[k] for k in range(n) if k not in skip)
+        return extra > 0.5 * applied * eff_c * eff_d
+
     for _ in range(300):
         best = None
         for i in charge_idx:
@@ -926,6 +934,8 @@ def _plan_battery(cfg, tz, now, slots, plans: list[SlotPlan], state: State, fc: 
                 if applied > EPS:
                     per_kwh = gain / applied
                     threshold = 0.0 if sp.price < 0 else cfg.arbitrage_min_spread
+                    if sp.price >= 0 and via_export(sim, (i,), applied):
+                        threshold = max(threshold, cfg.export_min_spread)
                     if per_kwh > threshold and (best is None or per_kwh > best[0]):
                         best = (per_kwh, "gc", i, delta, sim, per_kwh)
         for block in hold_blocks:
@@ -949,7 +959,10 @@ def _plan_battery(cfg, tz, now, slots, plans: list[SlotPlan], state: State, fc: 
                     hold[k] for k in block
                 )
                 rank = per_kwh + (HOLD_STICKY_EUR if touches else 0.0)
-                if per_kwh > cfg.arbitrage_min_spread and (best is None or rank > best[0]):
+                threshold = cfg.arbitrage_min_spread
+                if via_export(sim, block, applied):
+                    threshold = max(threshold, cfg.export_min_spread)
+                if per_kwh > threshold and (best is None or rank > best[0]):
                     best = (rank, "hold", new_slots, 0.0, sim, per_kwh)
         for i in export_idx:
             # Terugleveren
@@ -977,12 +990,19 @@ def _plan_battery(cfg, tz, now, slots, plans: list[SlotPlan], state: State, fc: 
             d, j = min(diffs) if diffs else (0, i)
             if d > -EPS:
                 j = None
+        exp_gain = [(sim.exp[k] - cur.exp[k], k) for k in range(n) if k not in held]
+        sells_later = kind in ("gc", "hold") and via_export(sim, held, sum(sim.imp[k] - cur.imp[k] for k in held))
+        if sells_later:
+            j = max(exp_gain)[1]
+            use = f"meer terugleveren om {_fmt(plans[j].start, tz, now)} (€{plans[j].sell_price:.3f})"
+        elif kind in ("gc", "hold") and j is not None:
+            use = f"accu dekt om {_fmt(plans[j].start, tz, now)} (€{plans[j].price:.3f})"
         if kind == "hold":
             for k in held:
                 hold[k] = True
                 hold_why[k] = (
-                    f"accu bewaren: huis nu van het net (€{plans[k].price:.3f}), accu dekt om {_fmt(plans[j].start, tz, now)} "
-                    f"(€{plans[j].price:.3f}): +€{per_kwh:.2f}/kWh{why_empty}"
+                    f"accu bewaren: huis nu van het net (€{plans[k].price:.3f}), {use}: +€{per_kwh:.2f}/kWh"
+                    + ("" if sells_later else why_empty)
                 )
         elif kind == "gc":
             gc[i] += delta
@@ -990,8 +1010,9 @@ def _plan_battery(cfg, tz, now, slots, plans: list[SlotPlan], state: State, fc: 
                 charge_why[i] = f"negatieve prijs €{plans[i].price:.4f}: accu laden"
             else:
                 charge_why[i] = (
-                    f"laden à €{plans[i].price:.3f}, bespaart om {_fmt(plans[j].start, tz, now)} (€{plans[j].price:.3f}): "
-                    f"+€{per_kwh:.2f}/kWh"
+                    f"laden à €{plans[i].price:.3f}, "
+                    + (use if sells_later else f"bespaart om {_fmt(plans[j].start, tz, now)} (€{plans[j].price:.3f})")
+                    + f": +€{per_kwh:.2f}/kWh"
                 )
         else:
             ex[i] += delta

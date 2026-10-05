@@ -444,3 +444,23 @@ def test_battery_runway_sun_refills():
     pv = {s.start: (2.0 if 10 <= s.start.astimezone(TZ).hour < 16 else 0.0) for s in prices}
     plan = make_plan(cfg(house_load_default_w=600), prices, State(soc=50), at(22, 5, day=5), Forecast(pv_kwh=pv))
     assert plan.summary["runway"]["expected"] is None
+
+
+def _reserve_case(reserve):
+    prices = quarters(at(15, day=5), [0.40] * 36 + [0.36] * 16 + [0.33] * 58 + [0.566] * 8 + [0.35] * 18)
+    pv = {s.start: (0.6 if 10 <= s.start.astimezone(TZ).hour < 16 and s.start.day == 6 else 0.0) for s in prices}
+    return make_plan(cfg(house_load_default_w=600, export_enabled=True, battery_reserve_soc=reserve, grid_charge_enabled=False),
+                     prices, State(soc=80), at(15, 5, day=5), Forecast(pv_kwh=pv))
+
+
+def test_no_night_hold_for_small_gain_when_export_hits_reserve():
+    # Reserve 60%: terugleveren stopt op de reserve. 's Nachts bewaren om morgen iets
+    # meer terug te leveren levert te weinig op (onder export_min_spread): niet doen.
+    plan = _reserve_case(60)
+    assert not [b for b in plan.battery_sessions if b["kind"] == "hold"]
+
+
+def test_hold_for_export_is_labelled_as_export():
+    plan = _reserve_case(55)
+    holds = [b for b in plan.battery_sessions if b["kind"] == "hold"]
+    assert all("meer terugleveren" in b["reason"] for b in holds)
