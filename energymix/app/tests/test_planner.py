@@ -284,3 +284,39 @@ def test_car_takes_solar_first_battery_does_not_rise():
     st2 = State(soc=50)
     plan2 = make_plan(cfg(house_load_default_w=500, grid_charge_enabled=False), prices, st2, at(11), Forecast(pv_kwh=pv))
     assert by_hour(plan2)[15].soc > 60
+
+
+def quarters(day, prices):
+    return build_slots((day + timedelta(minutes=15 * i), p, None) for i, p in enumerate(prices))
+
+
+def test_no_short_fragment_in_running_quarter():
+    # 10:45-11:00 net goedkoop (0.29), 11:00 duurder, 12:00-17:00 het echte goedkope blok
+    p = [0.40] * 43 + [0.29] + [0.31] * 4 + [0.20] * 20 + [0.40] * 28
+    prices = quarters(at(0), p)
+    st = State(zappi_plug="EV Connected", carcharger_mode="auto", cars=car("330"))  # 70 km = 1u05
+    plan = make_plan(cfg(), prices, st, at(10, 51))
+    fast = [s for s in plan.slots if s.zappi_mode == "Fast"]
+    assert fast[0].start >= at(12) and all(b.start == a.end for a, b in zip(fast, fast[1:]))
+    assert plan.now.zappi_mode == "Eco+"
+
+
+def test_one_block_not_scattered():
+    # Goedkoop om 02u en om 05u, duur ertussen: één blok, geen twee losse uren
+    prices = hourly(at(0), [0.30, 0.30, 0.10, 0.25, 0.30, 0.10, 0.26] + [0.30] * 17)
+    st = State(zappi_plug="EV Connected", carcharger_mode="auto", cars=car("270"))  # 130 km = 2u
+    plan = make_plan(cfg(), prices, st, at(0, 0))
+    hours = [s.start.astimezone(TZ).hour for s in plan.slots if s.zappi_mode == "Fast"]
+    assert hours in ([2, 3], [5, 6])
+
+
+def test_keeps_charging_when_later_block_barely_cheaper():
+    prices = hourly(at(0), [0.200, 0.200, 0.200, 0.195, 0.195] + [0.30] * 19)
+    st = State(zappi_plug="EV Connected", zappi_mode="Fast", zappi_status="Charging",
+               carcharger_mode="auto", cars=car("270"))
+    plan = make_plan(cfg(), prices, st, at(0, 10))
+    assert plan.now.zappi_mode == "Fast"  # 0.5 ct verschil: gewoon doorladen
+    # Is het later echt goedkoper (> 1 ct), dan wel stoppen
+    prices = hourly(at(0), [0.200, 0.200, 0.300, 0.150, 0.150] + [0.30] * 19)
+    plan = make_plan(cfg(), prices, st, at(0, 10))
+    assert plan.now.zappi_mode == "Eco+"

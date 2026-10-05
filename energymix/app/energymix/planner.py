@@ -501,12 +501,27 @@ def _plan_car(cfg, tz, now, slots, plans, state: State, notes, season: dict | No
     rest_km = max(0.0, cp.need_km - eco_km)
     left = rest_km / speed * 60 if cp.need_km else 0.0
     chosen: dict[datetime, float] = {}  # slot -> minuten laden
-    for sp in sorted(cands, key=lambda s: (s.price, s.start)):
-        if left <= 0.5:
-            break
-        mins = min(_hours(sp) * 60, left)
-        chosen[sp.start] = mins
-        left -= mins
+    if left > 0.5:
+        # Eén aaneengesloten blok (zoals Node-RED): geen losse kwartieren, geen gependel
+        best = _best_window(cands, left, now)
+        if best and state.zappi_mode == "Fast" and state.zappi_charging:
+            # Laadt hij al? Dan doorladen, tenzij een later blok echt goedkoper is
+            from_now = _best_window(cands, left, now, start_now=True)
+            if from_now and from_now[1] <= best[1] + CAR_STICKY_EUR:
+                best = from_now
+        if best:
+            chosen = best[0]
+            left = 0.0
+        else:
+            # Past niet als één blok (bv. gat in de data of eco ertussen): goedkoopste slots
+            for sp in sorted(cands, key=lambda s: (s.price, s.start)):
+                if left <= 0.5:
+                    break
+                mins = min(_eff_minutes(sp, now), left)
+                if mins <= 0:
+                    continue
+                chosen[sp.start] = mins
+                left -= mins
     if left > 0.5:
         where = f"vóór {_fmt(deadline, tz, now)}" if deadline else "binnen de bekende prijzen"
         notes.append(f"Auto: {left:.0f} min laden past niet {where}")
@@ -517,14 +532,15 @@ def _plan_car(cfg, tz, now, slots, plans, state: State, notes, season: dict | No
             continue
         mins = chosen[sp.start]
         sp.zappi_mode = "Fast"
+        start_at = max(sp.start, now)
         sp.car_kwh = cfg.zappi_max_w / 1000 * mins / 60
         cp.planned_kwh += sp.car_kwh
         sp.reasons["zappi"] = (
-            f"vannacht: vol vóór {_fmt(deadline, tz, now)}, goedkoopste uren voor {need_txt} (€{sp.price:.3f})"
+            f"vannacht: vol vóór {_fmt(deadline, tz, now)}, goedkoopste blok voor {need_txt} (€{sp.price:.3f})"
             if deadline
-            else f"goedkoopste uren voor {need_txt} (€{sp.price:.3f})"
+            else f"goedkoopste blok voor {need_txt} (€{sp.price:.3f})"
         )
-        cp.full_at = sp.start + timedelta(minutes=mins)
+        cp.full_at = start_at + timedelta(minutes=mins)
     if not chosen and eco_km > 0.5 and eco_km >= cp.need_km - 0.5:
         last = max((sp for sp in plans if sp.zappi_mode == "Eco"), key=lambda x: x.end)
         cp.full_at = last.end
@@ -534,6 +550,46 @@ def _plan_car(cfg, tz, now, slots, plans, state: State, notes, season: dict | No
             sp.zappi_mode = "Eco+"
             sp.reasons["zappi"] = "Eco+: alleen zonne-overschot" + ("" if cp.need_km > 0.5 else " (auto vol)")
     return cp
+
+
+CAR_STICKY_EUR = 0.01  # doorladen tenzij een later blok meer dan 1 ct/kWh goedkoper is
+
+
+def _eff_minutes(sp: SlotPlan, now: datetime) -> float:
+    """Minuten van het slot die nog komen (het lopende slot is deels voorbij)."""
+    return max(0.0, (sp.end - max(sp.start, now)).total_seconds() / 60)
+
+
+def _best_window(cands: list[SlotPlan], need_min: float, now: datetime, start_now: bool = False):
+    """Goedkoopste aaneengesloten blok van `need_min` minuten.
+
+    Geeft ({slot_start: minuten}, gemiddelde prijs) of None. Met start_now alleen
+    het blok dat in het eerste slot begint.
+    """
+    best = None
+    starts = range(1) if start_now else range(len(cands))
+    for i in starts:
+        if i >= len(cands):
+            break
+        used: dict[datetime, float] = {}
+        left, cost = need_min, 0.0
+        for j in range(i, len(cands)):
+            if j > i and cands[j].start != cands[j - 1].end:
+                break
+            m = min(_eff_minutes(cands[j], now), left)
+            if m <= 0:
+                if j == i:
+                    break
+                continue
+            used[cands[j].start] = m
+            cost += cands[j].price * m
+            left -= m
+            if left <= 0.5:
+                avg = cost / need_min
+                if best is None or avg < best[1] - 1e-9:
+                    best = (used, avg)
+                break
+    return best
 
 
 def _dur(minutes: float) -> str:

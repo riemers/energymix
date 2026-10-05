@@ -48,7 +48,9 @@ En deze sensoren: `sensor.energymix_status` (het verhaal), `sensor.energymix_pri
 **Auto (gaat altijd voor).** Net als in de Node-RED-flow: de auto die aan de Zappi hangt wordt herkend
 aan de kabel en locatie van de Tesla. Wat er mist tot de max-actieradius (`cars[].max_range_km`),
 gedeeld door de laadsnelheid (`charge_speed_km_per_hour`, standaard 65 km per uur), is de laadtijd.
-Die wordt ingepland in de goedkoopste uren van de bekende prijzen (vandaag en, na ±13:00, morgen).
+Die wordt ingepland als één aaneengesloten blok op het goedkoopste moment binnen de bekende prijzen
+(vandaag en, na ±13:00, morgen). Laadt de auto al, dan laadt hij door tenzij een later blok meer dan
+1 ct/kWh goedkoper is; zo pendelt de Zappi niet tussen Fast en Eco+.
 Staat `vannacht` aan, dan moet de auto vol zijn vóór "Vannacht: auto vol om"
 (`input_datetime.energymix_auto_klaar_om`).
 
