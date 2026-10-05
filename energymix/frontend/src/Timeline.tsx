@@ -1,5 +1,5 @@
 import { useLayoutEffect, useMemo, useRef, useState } from "react";
-import { dayTime, eur, priceColor, time } from "./format";
+import { LEVELS, dayTime, eur, slotColor, time } from "./format";
 import { Battery, Car, Plug, Sun } from "./icons";
 import type { Plan, SlotPlan } from "./types";
 
@@ -127,7 +127,7 @@ export default function Timeline({ plan, tz, cheap, fast, target, reserve }: Pro
           const w = Math.max(1, x(Date.parse(s.end)) - xs - (width > 600 ? 1.2 : 0.4));
           const top = s.price >= 0 ? y(s.price) : y(0);
           const hgt = Math.max(1.5, Math.abs(y(s.price) - y(0)));
-          return <rect key={s.start} x={xs} y={top} width={w} height={hgt} rx={Math.min(2.5, w / 3)} fill={priceColor(s.price, cheap, fast)} opacity={hover === null || hover === i ? 0.85 : 0.35} />;
+          return <rect key={s.start} x={xs} y={top} width={w} height={hgt} rx={Math.min(2.5, w / 3)} fill={slotColor(s.price, s.level, cheap, fast)} opacity={hover === null || hover === i ? 0.85 : 0.35} />;
         })}
 
         {socLine && <path d={socLine} fill="none" stroke="#34d399" strokeWidth={2.2} strokeLinejoin="round" style={{ filter: "drop-shadow(0 0 3px rgba(52,211,153,.6))" }} />}
@@ -230,7 +230,14 @@ function Tooltip({ slot, tz, left, width }: { slot: SlotPlan; tz: string; left: 
     <div className="pointer-events-none absolute top-6 z-10 rounded-xl border border-white/10 bg-ink-800/95 p-3 text-xs shadow-2xl backdrop-blur" style={{ left: l, width: w }}>
       <div className="flex items-baseline justify-between gap-2">
         <span className="text-slate-400">{dayTime(slot.start, tz)}</span>
-        <span className="text-base font-semibold">{eur(slot.price, 3)}</span>
+        <span className="text-right">
+          <span className="text-base font-semibold">{eur(slot.price, 3)}</span>
+          {slot.level && LEVELS[slot.level] && (
+            <span className="ml-1.5 rounded px-1 text-[10px] font-medium text-slate-950" style={{ background: LEVELS[slot.level].color }}>
+              {LEVELS[slot.level].label}
+            </span>
+          )}
+        </span>
       </div>
       <div className="mt-1 flex flex-wrap gap-x-3 text-[11px] text-slate-400">
         {slot.soc !== null && <span>accu <b className="text-emerald-300">{slot.soc.toFixed(0)}%</b></span>}
@@ -252,8 +259,7 @@ function Tooltip({ slot, tz, left, width }: { slot: SlotPlan; tz: string; left: 
 function Legend() {
   const items: [string, string, "box" | "line"][] = [
     ["var(--color-neg)", "negatief", "box"],
-    ["var(--color-cheap)", "goedkoop", "box"],
-    ["var(--color-high)", "duur", "box"],
+    ...Object.values(LEVELS).map((l) => [l.color, l.label, "box"] as [string, string, "box"]),
     ["#34d399", "accu verwacht", "line"],
     [CAR_COLOR.Fast, "auto Fast", "box"],
     [CAR_COLOR.Eco, "auto Eco", "box"],

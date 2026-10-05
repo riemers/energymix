@@ -121,6 +121,7 @@ class SlotPlan:
     end: datetime
     price: float
     sell_price: float = 0.0
+    level: str | None = None  # Tibber: VERY_CHEAP, CHEAP, NORMAL, EXPENSIVE, VERY_EXPENSIVE
     pv_on: bool | None = None
     ess_state: int | None = None
     dvcc_current: int | None = None
@@ -306,7 +307,7 @@ def make_plan(
     season["mode"] = cfg.season_mode
     season["effective"] = cfg.season_mode if cfg.season_mode in ("day", "night") else season["detected"]
 
-    plans = [SlotPlan(s.start, s.end, s.price, sell_price(cfg, s)) for s in slots]
+    plans = [SlotPlan(s.start, s.end, s.price, sell_price(cfg, s), level=s.level) for s in slots]
     for sp, s in zip(plans, slots):
         sp.pv_kwh = fc.pv_kwh.get(s.start, 0.0)
         sp.house_kwh = fc.house_kwh.get(s.start, cfg.house_load_default_w / 1000 * _hours(s))

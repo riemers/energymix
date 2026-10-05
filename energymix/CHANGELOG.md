@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.2.14
+- Prijsbalken in de Tibber-kleuren per kwartier (zeer goedkoop → zeer duur), ook in de tooltip en bij "Prijs nu"
+- Minigrafiek rechtsboven vervangen door "Vandaag": verbruik, zon, auto, accu (netto +/−) en net in kWh
+
 ## 0.2.13
 - Fix: kleine laadacties op 20 A (bv. om 16:00 net na het laden van de auto). De planning gebruikte
   het "geleerde" laadvermogen, dat gemeten is terwijl de zon laadde (~3 kW) en dus te laag is; nu het

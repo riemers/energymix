@@ -107,6 +107,7 @@ def create_app(engine: Engine) -> web.Application:
             "plan": engine.plan.to_dict() if engine.plan else None,
             "actions": [a.to_dict() for a in engine.executor.last_actions],
             "live": engine.live(),
+            "today": engine.store.today_totals(engine.tz),
         }
 
     def helper_body() -> list[dict]:
