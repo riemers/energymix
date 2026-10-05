@@ -50,9 +50,7 @@ export default function App() {
     <div className="mx-auto max-w-6xl px-4 pb-16 pt-6 sm:px-6">
       <header className="mb-6 flex flex-wrap items-center gap-3">
         <div className="flex items-center gap-2.5">
-          <div className="grid h-9 w-9 place-items-center rounded-xl bg-gradient-to-br from-emerald-400 to-sky-500 text-lg shadow-lg shadow-emerald-500/20">
-            ⚡
-          </div>
+          <img src="./icon.png" alt="" className="h-9 w-9 drop-shadow-lg" />
           <div>
             <h1 className="text-lg font-semibold leading-tight tracking-tight">Energymix</h1>
             <p className="text-xs text-slate-400">
