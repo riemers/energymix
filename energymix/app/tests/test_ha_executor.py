@@ -79,3 +79,16 @@ async def test_ha_client_and_executor(tmp_path):
         assert calls[0]["target"] == {"entity_id": "switch.pv"}
         task.cancel()
     await runner.cleanup()
+
+
+def test_supervisor_token_from_s6_env(tmp_path, monkeypatch):
+    from energymix import ha as ha_mod
+
+    monkeypatch.delenv("SUPERVISOR_TOKEN", raising=False)
+    monkeypatch.delenv("HASSIO_TOKEN", raising=False)
+    monkeypatch.setattr(ha_mod, "S6_ENV", tmp_path)
+    assert ha_mod.supervisor_token() == ""
+    (tmp_path / "SUPERVISOR_TOKEN").write_text("abc\n")
+    assert ha_mod.supervisor_token() == "abc"
+    monkeypatch.setenv("SUPERVISOR_TOKEN", "env")
+    assert ha_mod.supervisor_token() == "env"

@@ -1,5 +1,8 @@
 # Changelog
 
+## 0.1.2
+- Fix: verbinding met Home Assistant faalde (`auth_invalid`) omdat s6 de SUPERVISOR_TOKEN wiste
+
 ## 0.1.1
 - Icoon en logo voor de Add-on Store, favicon in het dashboard
 
