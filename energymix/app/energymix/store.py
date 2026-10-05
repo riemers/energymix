@@ -85,14 +85,28 @@ class Store:
         return list(self.db.execute("SELECT * FROM samples WHERE ts >= ? ORDER BY ts", (since.astimezone(timezone.utc).isoformat(),)))
 
     def house_profile(self, tz, days: int = 14) -> dict[int, float]:
-        """Gemiddeld huisverbruik (W) per uur van de dag."""
+        """Huisverbruik (W) per uur van de dag.
+
+        Robuust: metingen terwijl de auto laadt tellen niet mee (een verkeerd
+        afgetrokken Zappi zou de nacht enorm opblazen), negatieve waarden worden 0,
+        en de hoogste 10% per uur (oven, waterkoker) valt weg.
+        """
         by_hour: dict[int, list[float]] = {}
         for r in self.samples(datetime.now(timezone.utc) - timedelta(days=days)):
             if r["house_w"] is None:
                 continue
+            if (r["zappi_w"] or 0) > 500:
+                continue
             h = datetime.fromisoformat(r["ts"]).astimezone(tz).hour
-            by_hour.setdefault(h, []).append(r["house_w"])
-        return {h: sum(v) / len(v) for h, v in by_hour.items() if len(v) >= 10}
+            by_hour.setdefault(h, []).append(max(0.0, r["house_w"]))
+        out = {}
+        for h, v in by_hour.items():
+            if len(v) < 10:
+                continue
+            v.sort()
+            keep = v[: max(1, int(len(v) * 0.9))]
+            out[h] = sum(keep) / len(keep)
+        return out
 
     def today_totals(self, tz) -> dict:
         """kWh van vandaag (lokale tijd) uit de metingen per minuut."""

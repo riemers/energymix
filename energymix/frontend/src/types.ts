@@ -87,6 +87,11 @@ export interface Summary {
   soc_min?: number;
   soc_min_at?: string;
   target_reached_at?: string | null;
+  hold_slots?: number;
+  empty_at?: string | null;
+  empty_why?: string;
+  house_kwh_24h?: number;
+  pv_kwh_24h?: number;
 }
 
 export interface Plan {

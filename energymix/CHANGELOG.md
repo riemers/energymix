@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.2.18
+- Geleerd huisverbruik is robuuster: metingen terwijl de auto laadt tellen niet mee, negatieve waarden
+  worden 0 en de hoogste 10% per uur (pieken) valt weg. Een opgeblazen nachtverbruik liet de planner
+  denken dat de accu leeg zou raken, en dan ging hij 's nachts "bewaren"
+- Bij bewaren staat erbij wanneer de accu zonder sturing leeg zou zijn, en met welk verbruik en welke zon
+- Statistiek: verwacht huisverbruik en zon voor de komende 24 uur, en wanneer de accu zonder sturing leeg is
+
 ## 0.2.17
 - "Accu bewaren" gaat nu in blokken van minstens een uur, en liever één lang blok dan een paar losse:
   geen losse kwartiertjes meer verspreid over de nacht
