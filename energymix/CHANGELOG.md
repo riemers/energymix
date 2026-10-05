@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.2.7
+- Ochtend-eco terug als vaste keuze: accu > 60% en ≥ 35 kWh zon verwacht → auto 's ochtends op Eco
+  met de Victron op all loads; wat dat oplevert gaat af van de Fast-laadtijd in de goedkoopste uren
+- Tijdens eco wordt de accu nooit bewaard of van het net geladen
+- Eco-drempels instelbaar in Instellingen → Auto; laadplan laat zien of eco vandaag doorgaat en waarom
+
 ## 0.2.6
 - Auto laadt weer zoals in Node-RED: ontbrekende km tot de max-actieradius / laadsnelheid
   (65 km/u) = laadtijd, in de goedkoopste bekende uren. Geen minimum-km meer

@@ -134,7 +134,7 @@ class Config:
     default_charge_minutes: int = 360
     vannacht_ready_hour: int = 8
     eco_battery_soc_min: float = 60
-    eco_solar_min: float = 50
+    eco_solar_min: float = 35  # kWh zon vandaag (prognose) nodig voor ochtend-eco
     eco_sunchance_min: float = 50
     eco_morning_start_hour: int = 5
     eco_morning_end_hour: int = 12

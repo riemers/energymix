@@ -126,6 +126,7 @@ class SlotPlan:
     export_kwh: float = 0.0
     import_kwh: float = 0.0
     car_range_km: float | None = None  # verwachte actieradius aan het eind van het slot
+    car_eco_kwh: float = 0.0  # auto op Eco uit accu/zon (niet van het net)
     reasons: dict[str, str] = field(default_factory=dict)
 
     def to_dict(self) -> dict:
@@ -148,6 +149,8 @@ class CarPlan:
     kwh_per_km: float = 0.17
     need_km: float = 0.0
     need_minutes: float = 0.0
+    eco_km: float = 0.0
+    eco_reason: str = ""
     sessions: list[dict] = field(default_factory=list)
 
     def to_dict(self) -> dict:
@@ -307,7 +310,7 @@ def make_plan(
                 sp.pv_kwh = 0.0
 
     # 2. Auto
-    car = _plan_car(cfg, tz, now, slots, plans, state, notes)
+    car = _plan_car(cfg, tz, now, slots, plans, state, notes, season)
 
     # 3. Accu
     summary: dict = {}
@@ -341,7 +344,7 @@ def _car_sessions(plans: list[SlotPlan], car: CarPlan, state: State, speed: floa
     cur: dict | None = None
     for sp in plans:
         mode = sp.zappi_mode if sp.zappi_mode in ("Fast", "Eco") else None
-        kwh = sp.car_kwh if mode == "Fast" else (ECO_KW * _hours(sp) if mode == "Eco" else 0.0)
+        kwh = sp.car_kwh if mode == "Fast" else (sp.car_eco_kwh if mode == "Eco" else 0.0)
         km_before = km
         if km is not None and car.max_range_km:
             # Fast: laadsnelheid in km/u (zoals Node-RED); Eco: via kWh per km
@@ -354,7 +357,7 @@ def _car_sessions(plans: list[SlotPlan], car: CarPlan, state: State, speed: floa
             kind = (
                 "vannacht" if why.startswith("vannacht") else
                 "goedkoopst" if why.startswith("goedkoopste") else
-                "eco" if mode == "Eco" else "handmatig"
+                "eco" if why.startswith("ochtend-eco") else "handmatig"
             )
             if cur and cur["mode"] == mode and cur["end"] == sp.start.isoformat():
                 cur["end"] = sp.end.isoformat()
@@ -420,7 +423,7 @@ def _active_car(state: State) -> CarState | None:
     return None
 
 
-def _plan_car(cfg, tz, now, slots, plans, state: State, notes) -> CarPlan:
+def _plan_car(cfg, tz, now, slots, plans, state: State, notes, season: dict | None = None) -> CarPlan:
     cp = CarPlan()
     if not cfg.zappi_mode_entity:
         return cp
@@ -471,8 +474,32 @@ def _plan_car(cfg, tz, now, slots, plans, state: State, notes) -> CarPlan:
         cp.need_km = cp.need_minutes = 0.0
     cp.need_full_kwh = cp.need_km * cp.kwh_per_km
 
-    cands = [sp for sp in plans if deadline is None or sp.start < deadline]
-    left = cp.need_minutes
+    # a. Ochtend-eco: accu (al behoorlijk vol) + een echte zonnedag -> auto op Eco,
+    #    Victron op all loads. Wat dat oplevert gaat af van de Fast-laadtijd.
+    eco_ok, eco_why = _eco_conditions(cfg, state, season or {})
+    cp.eco_reason = eco_why
+    eco_km = 0.0
+    if eco_ok and cp.need_km > 0.5:
+        today = now.astimezone(tz).date()
+        for sp in plans:
+            local = sp.start.astimezone(tz)
+            if local.date() != today or not cfg.eco_morning_start_hour <= local.hour < cfg.eco_morning_end_hour:
+                continue
+            if eco_km >= cp.need_km - 0.5:
+                break
+            kwh = ECO_KW * _hours(sp) * (((sp.end - now) / (sp.end - sp.start)) if sp.start < now else 1)
+            kwh = min(kwh, (cp.need_km - eco_km) * cp.kwh_per_km)
+            sp.zappi_mode = "Eco"
+            sp.car_eco_kwh = kwh
+            sp.feed_in_disabled = 0
+            sp.reasons["zappi"] = sp.reasons["feed_in"] = f"ochtend-eco: {eco_why}"
+            eco_km += kwh / cp.kwh_per_km
+    cp.eco_km = eco_km
+
+    # b. Rest in de goedkoopste uren (Fast van het net)
+    cands = [sp for sp in plans if (deadline is None or sp.start < deadline) and sp.zappi_mode != "Eco"]
+    rest_km = max(0.0, cp.need_km - eco_km)
+    left = rest_km / speed * 60 if cp.need_km else 0.0
     chosen: dict[datetime, float] = {}  # slot -> minuten laden
     for sp in sorted(cands, key=lambda s: (s.price, s.start)):
         if left <= 0.5:
@@ -484,7 +511,7 @@ def _plan_car(cfg, tz, now, slots, plans, state: State, notes) -> CarPlan:
         where = f"vóór {_fmt(deadline, tz, now)}" if deadline else "binnen de bekende prijzen"
         notes.append(f"Auto: {left:.0f} min laden past niet {where}")
 
-    need_txt = f"{cp.need_km:.0f} km ({_dur(cp.need_minutes)})"
+    need_txt = f"{rest_km:.0f} km ({_dur(rest_km / speed * 60)})" + (f", na {eco_km:.0f} km eco" if eco_km > 0.5 else "")
     for sp in plans:
         if sp.start not in chosen:
             continue
@@ -498,6 +525,14 @@ def _plan_car(cfg, tz, now, slots, plans, state: State, notes) -> CarPlan:
             else f"goedkoopste uren voor {need_txt} (€{sp.price:.3f})"
         )
         cp.full_at = sp.start + timedelta(minutes=mins)
+    if not chosen and eco_km > 0.5 and eco_km >= cp.need_km - 0.5:
+        last = max((sp for sp in plans if sp.zappi_mode == "Eco"), key=lambda x: x.end)
+        cp.full_at = last.end
+    # Overige slots: Eco+ (alleen zonne-overschot)
+    for sp in plans:
+        if sp.zappi_mode is None:
+            sp.zappi_mode = "Eco+"
+            sp.reasons["zappi"] = "Eco+: alleen zonne-overschot" + ("" if cp.need_km > 0.5 else " (auto vol)")
     return cp
 
 
@@ -506,25 +541,25 @@ def _dur(minutes: float) -> str:
     return f"{m} min" if m < 60 else f"{m // 60}u{m % 60:02d}"
 
 
-def _morning_eco(cfg, tz, sp: SlotPlan, state: State, car: CarPlan, battery_need_kwh: float, house_rest_kwh: float, season) -> tuple[bool, str]:
-    hour = sp.start.astimezone(tz).hour
+def _eco_conditions(cfg, state: State, season: dict) -> tuple[bool, str]:
+    """Mag de auto vandaag 's ochtends op Eco uit de accu laden?
+
+    Alleen als de accu al behoorlijk vol is én het een echte zonnedag wordt:
+    dan is de accu later op de dag weer vol (of goedkoop bij te laden).
+    """
     if season.get("effective") == "night":
         return False, "winterpatroon: geen ochtend-eco"
-    if not cfg.eco_morning_start_hour <= hour < cfg.eco_morning_end_hour:
-        return False, f"geen ochtend-eco buiten {cfg.eco_morning_start_hour}–{cfg.eco_morning_end_hour}u"
-    if state.car_full or car.need_full_kwh - car.planned_kwh <= EPS:
-        return False, "auto (straks) vol"
-    soc = state.soc or 0
-    if soc <= cfg.eco_battery_soc_min:
-        return False, f"SoC {soc:.0f}% te laag voor ochtend-eco"
+    if state.car_full:
+        return False, "auto vol"
+    soc = state.soc
+    if soc is None or soc <= cfg.eco_battery_soc_min:
+        return False, f"accu {soc or 0:.0f}% ≤ {cfg.eco_battery_soc_min:.0f}%"
+    solar = state.solar_today_kwh or 0
+    if solar < cfg.eco_solar_min:
+        return False, f"zon vandaag {solar:.0f} kWh < {cfg.eco_solar_min:.0f} kWh"
     if state.sunchance is not None and state.sunchance < cfg.eco_sunchance_min:
-        return False, f"zonkans {state.sunchance:.0f}% te laag voor ochtend-eco"
-    solar = state.solar_remaining_kwh if state.solar_remaining_kwh is not None else (state.solar_today_kwh or 0)
-    car_gap = car.need_full_kwh - car.planned_kwh
-    needed = car_gap + battery_need_kwh + house_rest_kwh
-    if solar < needed:
-        return False, f"zon nog {solar:.0f} kWh < {needed:.0f} kWh nodig (auto {car_gap:.0f} + accu {battery_need_kwh:.0f} + huis {house_rest_kwh:.0f})"
-    return True, f"ochtend-eco uit accu: zon nog {solar:.0f} kWh vult auto ({car_gap:.0f}) + accu ({battery_need_kwh:.0f}) weer aan"
+        return False, f"zonkans {state.sunchance:.0f}% < {cfg.eco_sunchance_min:.0f}%"
+    return True, f"accu {soc:.0f}% en zon vandaag {solar:.0f} kWh: auto uit accu/zon, Victron all loads"
 
 
 # --------------------------------------------------------------------------- accu
@@ -568,25 +603,8 @@ def _plan_battery(cfg, tz, now, slots, plans: list[SlotPlan], state: State, fc: 
     q = sorted(sp.price for sp in plans) or [0.2]
     terminal_value = q[len(q) // 4] / eff_c
 
-    # Ochtend-eco: accu → auto (geschat 3.7 kW zolang de auto niet vol is)
-    eco = [0.0] * n
-    house_rest = 0.0
-    batt_need = max(0.0, target_e - e0)
-    for i, sp in enumerate(plans):
-        if sp.zappi_mode is None and cfg.zappi_mode_entity and state.car_plugged and state.carcharger_mode == "auto":
-            fast_ahead = any(o.zappi_mode == "Fast" and o.start > sp.start for o in plans[i:] if o.start.date() == sp.start.date())
-            house_rest = sum(o.house_kwh for o in plans[i:] if o.start.astimezone(tz).date() == sp.start.astimezone(tz).date() and 7 <= o.start.astimezone(tz).hour < 20)
-            ok, why = (False, "wacht op Fast-laadslot") if fast_ahead else _morning_eco(
-                cfg, tz, sp, state, car, batt_need, house_rest, season
-            )
-            if ok and sp.start.astimezone(tz).date() == now.astimezone(tz).date():
-                sp.zappi_mode = "Eco"
-                sp.feed_in_disabled = 0
-                sp.reasons["zappi"] = sp.reasons["feed_in"] = why
-                eco[i] = 3.7 * _hours(sp)
-            else:
-                sp.zappi_mode = "Eco+"
-                sp.reasons["zappi"] = f"buiten laadslots ({why})"
+    # Ochtend-eco (door de autoplanning gekozen): accu/zon → auto
+    eco = [sp.car_eco_kwh for sp in plans]
 
     gc = [0.0] * n
     ex = [0.0] * n
@@ -650,7 +668,8 @@ def _plan_battery(cfg, tz, now, slots, plans: list[SlotPlan], state: State, fc: 
     by_sell = sorted(p.sell_price for p in plans)
     cheap_limit = by_price[len(by_price) // 2] if by_price else 0
     sell_limit = by_sell[(len(by_sell) * 2) // 3] if by_sell else 0
-    charge_idx = [i for i in range(n) if plans[i].price <= cheap_limit or plans[i].price < 0]
+    # Tijdens ochtend-eco levert de accu aan de auto: dan niet bewaren of van het net laden
+    charge_idx = [i for i in range(n) if (plans[i].price <= cheap_limit or plans[i].price < 0) and eco[i] <= EPS]
     export_idx = [i for i in range(n) if export_cap[i] > EPS and plans[i].sell_price >= sell_limit]
     for _ in range(300):
         best = None
