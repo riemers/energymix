@@ -616,9 +616,13 @@ def _plan_battery(cfg, tz, now, slots, plans: list[SlotPlan], state: State, fc: 
         e = e0
         soc_e, cost, imp_l, exp_l = [], [], [], []
         for i, sp in enumerate(plans):
-            imp = sp.car_kwh  # auto laadt uit het net (feed-in dicht)
+            # Laadt de auto, dan pakt hij de zon eerst; de rest komt van het net
+            # (feed-in dicht: de accu levert niet aan de auto). Pas wat daarna aan
+            # zon over is gaat naar huis en accu.
+            pv_car = min(sp.pv_kwh, sp.car_kwh)
+            imp = sp.car_kwh - pv_car
             exp = 0.0
-            net = sp.pv_kwh - sp.house_kwh - eco[i]
+            net = sp.pv_kwh - pv_car - sp.house_kwh - eco[i]
             ch_cap = charge_cap[i] if sp.car_kwh > EPS else charge_w / 1000 * _hours(sp)
             used = 0.0
             if net >= 0:

@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.2.8
+- Fix: laadt de auto, dan gaat de zon eerst naar de auto en pas de rest naar huis en accu.
+  De verwachte accu-lijn stijgt dus niet meer tijdens het laden van de auto
+
 ## 0.2.7
 - Ochtend-eco terug als vaste keuze: accu > 60% en ≥ 35 kWh zon verwacht → auto 's ochtends op Eco
   met de Victron op all loads; wat dat oplevert gaat af van de Fast-laadtijd in de goedkoopste uren
