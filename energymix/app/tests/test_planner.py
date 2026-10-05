@@ -132,26 +132,33 @@ def test_battery_charge_limited_by_grid_when_car_charges():
 # ------------------------------------------------------------------ auto
 
 
-def test_car_below_minimum_charges_cheapest_before_deadline():
-    # Om 22:00, deadline 07:30. Goedkoopste uren 03-05u.
+def test_car_charges_missing_km_in_cheapest_hours():
+    # 400 - 270 = 130 km / 65 km/u = 2 uur, in de goedkoopste uren (morgen 03-05u)
     prices = hourly(at(0, day=6), [0.30] * 48)
     prices = [s if not (3 <= s.start.astimezone(TZ).hour < 5 and s.start.day == 7) else s.__class__(s.start, s.end, 0.18) for s in prices]
-    st = State(soc=50, zappi_plug="EV Connected", carcharger_mode="auto", cars=car("200"))
-    plan = make_plan(cfg(force_fast_price=0.0, car_opportunistic_price=0.0), prices, st, at(22))
+    st = State(soc=50, zappi_plug="EV Connected", carcharger_mode="auto", cars=car("270"))
+    plan = make_plan(cfg(), prices, st, at(22))
     fast = [s for s in plan.slots if s.zappi_mode == "Fast"]
-    # 50 km * 0.2 = 10 kWh = 1 uur bij 11 kW
-    assert len(fast) == 1 and fast[0].start == at(3, day=7)
-    assert "onder 250 km" in fast[0].reasons["zappi"]
+    assert [s.start for s in fast] == [at(3, day=7), at(4, day=7)]
+    assert "130 km (2u00)" in fast[0].reasons["zappi"]
+    assert plan.car.full_at == at(5, day=7)
 
 
-def test_car_above_minimum_only_charges_when_cheap():
-    prices = hourly(at(0), [0.30] * 10 + [0.12] * 2 + [0.30] * 12)
+def test_partial_last_slot():
+    # 100 km = 1u32: twee uren, het tweede maar 32 minuten
+    prices = hourly(at(0), [0.10, 0.11] + [0.30] * 22)
     st = State(zappi_plug="EV Connected", carcharger_mode="auto", cars=car("300"))
-    plan = make_plan(cfg(force_fast_price=0.0, car_opportunistic_price=0.15), prices, st, at(8))
-    fast = [s.start.astimezone(TZ).hour for s in plan.slots if s.zappi_mode == "Fast"]
-    assert fast == [10, 11]
-    assert "goedkoop bijladen" in by_hour(plan)[10].reasons["zappi"]
-    plan = make_plan(cfg(force_fast_price=0.0, car_opportunistic_price=0.10), prices, st, at(8))
+    plan = make_plan(cfg(), prices, st, at(0))
+    h = by_hour(plan)
+    assert h[0].zappi_mode == h[1].zappi_mode == "Fast" and h[2].zappi_mode != "Fast"
+    assert abs(h[1].car_kwh - 11 * (100 / 65 * 60 - 60) / 60) < 0.01
+    assert plan.car.full_at.replace(second=0, microsecond=0) == at(1, 32)
+
+
+def test_full_car_does_not_charge():
+    prices = hourly(at(0), [0.05] * 24)
+    st = State(zappi_plug="EV Connected", carcharger_mode="auto", cars=car("400"))
+    plan = make_plan(cfg(), prices, st, at(1))
     assert not any(s.zappi_mode == "Fast" for s in plan.slots)
 
 
@@ -164,20 +171,18 @@ def test_vannacht_means_full_before_ready_hour():
     assert plan.car.full_at is not None
 
 
-def test_morning_eco_when_sun_refills():
+def test_morning_eco_only_when_car_not_fully_planned():
+    # Te weinig bekende uren voor de hele lading: rest 's ochtends uit accu als de zon het aanvult
     prices = hourly(at(0), [0.30] * 24)
-    st = State(
-        soc=80, solar_remaining_kwh=60, sunchance=70, zappi_plug="EV Connected",
-        carcharger_mode="auto", cars=car("350"),
-    )
-    plan = make_plan(cfg(force_fast_price=0.0, car_opportunistic_price=0.0), prices, st, at(8))
-    assert plan.now.zappi_mode == "Eco"
-    assert plan.now.feed_in_disabled == 0
-    # Te weinig zon: geen eco
+    st = State(soc=80, solar_remaining_kwh=60, sunchance=70, zappi_plug="EV Connected",
+               carcharger_mode="auto", vannacht=True, cars=car("100"))
+    plan = make_plan(cfg(car_ready_time="07:30"), prices, st, at(7))
+    assert plan.now.zappi_mode == "Fast"  # het enige uur vóór 07:30
+    later = by_hour(plan)[9]
+    assert later.zappi_mode == "Eco" and later.feed_in_disabled == 0
     st.solar_remaining_kwh = 5
-    plan = make_plan(cfg(force_fast_price=0.0, car_opportunistic_price=0.0), prices, st, at(8))
-    assert plan.now.zappi_mode == "Eco+"
-    assert "zon nog" in plan.now.reasons["zappi"]
+    plan = make_plan(cfg(car_ready_time="07:30"), prices, st, at(7))
+    assert by_hour(plan)[9].zappi_mode == "Eco+"
 
 
 def test_ecoa_enables_all_loads_and_no_car_means_no_zappi():
@@ -233,10 +238,9 @@ def test_quarter_hour_prices():
 
 def test_car_sessions_show_when_and_how_far():
     prices = hourly(at(0), [0.30] * 10 + [0.12] * 2 + [0.30] * 12)
-    st = State(zappi_plug="EV Connected", carcharger_mode="auto", cars=car("300"))
-    plan = make_plan(cfg(force_fast_price=0.0, car_opportunistic_price=0.15), prices, st, at(8))
+    st = State(zappi_plug="EV Connected", carcharger_mode="auto", cars=car("270"))
+    plan = make_plan(cfg(), prices, st, at(8))
     [sess] = plan.car.sessions
-    assert sess["mode"] == "Fast" and sess["kinds"] == ["bijladen"]
+    assert sess["mode"] == "Fast" and sess["kinds"] == ["goedkoopst"]
     assert sess["start"] == at(10).isoformat() and sess["end"] == at(12).isoformat()
-    # 100 km tekort * 0.2 = 20 kWh, 2 uur x 11 kW = 22 kWh -> vol
-    assert sess["range_start_km"] == 300 and sess["range_end_km"] == 400 and sess["kwh"] == 20.0
+    assert sess["range_start_km"] == 270 and sess["range_end_km"] == 400

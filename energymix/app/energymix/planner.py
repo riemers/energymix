@@ -146,6 +146,8 @@ class CarPlan:
     full_at: datetime | None = None
     max_range_km: float | None = None
     kwh_per_km: float = 0.17
+    need_km: float = 0.0
+    need_minutes: float = 0.0
     sessions: list[dict] = field(default_factory=list)
 
     def to_dict(self) -> dict:
@@ -323,14 +325,14 @@ def make_plan(
     # Nederlandse notatie in de redenen: €0,162 i.p.v. €0.162
     for sp in plans:
         sp.reasons = {k: _nl(v) for k, v in sp.reasons.items()}
-    car.sessions = _car_sessions(plans, car, state)
+    car.sessions = _car_sessions(plans, car, state, cfg.charge_speed_km_per_hour, cfg.zappi_max_w / 1000)
     return Plan(now, plans, car, season, summary, [_nl(n) for n in notes], _battery_sessions(plans))
 
 
 ECO_KW = 3.7  # geschat laadvermogen op Eco (zon/accu)
 
 
-def _car_sessions(plans: list[SlotPlan], car: CarPlan, state: State) -> list[dict]:
+def _car_sessions(plans: list[SlotPlan], car: CarPlan, state: State, speed: float = 65.0, fast_kw: float = 11.0) -> list[dict]:
     """Laadsessies van de auto: aaneengesloten slots met dezelfde Zappi-modus."""
     if not state.car_plugged:
         return []
@@ -342,17 +344,17 @@ def _car_sessions(plans: list[SlotPlan], car: CarPlan, state: State) -> list[dic
         kwh = sp.car_kwh if mode == "Fast" else (ECO_KW * _hours(sp) if mode == "Eco" else 0.0)
         km_before = km
         if km is not None and car.max_range_km:
-            room = max(0.0, car.max_range_km - km) * car.kwh_per_km
-            kwh = min(kwh, room)
-            km = min(car.max_range_km, km + kwh / car.kwh_per_km)
+            # Fast: laadsnelheid in km/u (zoals Node-RED); Eco: via kWh per km
+            gain = (kwh / fast_kw * speed) if mode == "Fast" and fast_kw else kwh / car.kwh_per_km
+            gain = min(gain, max(0.0, car.max_range_km - km))
+            km = km + gain
             sp.car_range_km = round(km)
         if mode and kwh > EPS:
             why = sp.reasons.get("zappi", "")
             kind = (
-                "minimum" if why.startswith(("onder ", "vannacht")) else
-                "bijladen" if "goedkoop bijladen" in why else
-                "eco" if mode == "Eco" else
-                "direct" if "direct laden" in why else "handmatig"
+                "vannacht" if why.startswith("vannacht") else
+                "goedkoopst" if why.startswith("goedkoopste") else
+                "eco" if mode == "Eco" else "handmatig"
             )
             if cur and cur["mode"] == mode and cur["end"] == sp.start.isoformat():
                 cur["end"] = sp.end.isoformat()
@@ -447,75 +449,61 @@ def _plan_car(cfg, tz, now, slots, plans, state: State, notes) -> CarPlan:
             sp.reasons["zappi"] = f"onbekende laadmodus '{mode}': niets doen"
         return cp
 
+    # Zoals in Node-RED: wat mist er tot de max-actieradius, en hoe lang duurt dat
+    # bij de laadsnelheid (km per uur)? Die tijd in de goedkoopste uren.
     active = _active_car(state)
-    deadline = next_time(now, tz, cfg.car_ready_time)
-    if state.vannacht:
-        ready = now.astimezone(tz).replace(hour=cfg.vannacht_ready_hour, minute=0, second=0, microsecond=0)
-        if ready <= now:
-            ready += timedelta(days=1)
-        deadline = min(deadline, ready)
+    deadline = next_time(now, tz, cfg.car_ready_time) if state.vannacht else None
     cp.deadline = deadline
+    speed = max(1.0, cfg.charge_speed_km_per_hour)
 
     if active:
         rng = active.range_value or 0.0
         cp.name, cp.range_km = active.name, rng
         kpk = active.kwh_per_km or 0.17
         cp.max_range_km, cp.kwh_per_km = active.max_range_km, kpk
-        cp.need_full_kwh = max(0.0, active.max_range_km - rng) * kpk
-        min_km = min(cfg.car_min_range_km, active.max_range_km)
-        cp.need_min_kwh = max(0.0, min_km - rng) * kpk
-        if state.vannacht:
-            cp.need_min_kwh = cp.need_full_kwh  # "vannacht": vol vóór vertrek
+        cp.need_km = max(0.0, active.max_range_km - rng)
+        cp.need_minutes = min(720.0, cp.need_km / speed * 60)
     else:
-        # Auto aangesloten maar onbekend welke: standaard laadduur als minimum
-        cp.need_full_kwh = cfg.default_charge_minutes / 60 * cfg.zappi_max_w / 1000
-        cp.need_min_kwh = 0.0
+        cp.need_minutes = float(cfg.default_charge_minutes)
+        cp.need_km = cp.need_minutes / 60 * speed
         notes.append("Aangesloten auto niet herkend (kabel/locatie/actieradius): standaard laadduur")
     if state.car_full:
-        cp.need_full_kwh = cp.need_min_kwh = 0.0
+        cp.need_km = cp.need_minutes = 0.0
+    cp.need_full_kwh = cp.need_km * cp.kwh_per_km
 
-    per_slot = {sp.start: cfg.zappi_max_w / 1000 * _hours(sp) for sp in plans}
-    chosen: dict[datetime, str] = {}
-
-    # a. Moet: minimum vóór de deadline, goedkoopste slots
-    remaining = cp.need_min_kwh
-    must_cands = sorted((sp for sp in plans if sp.end <= deadline or sp.start < deadline), key=lambda s: (s.price, s.start))
-    for sp in must_cands:
-        if remaining <= EPS:
+    cands = [sp for sp in plans if deadline is None or sp.start < deadline]
+    left = cp.need_minutes
+    chosen: dict[datetime, float] = {}  # slot -> minuten laden
+    for sp in sorted(cands, key=lambda s: (s.price, s.start)):
+        if left <= 0.5:
             break
-        chosen[sp.start] = (
-            f"onder {cfg.car_min_range_km:.0f} km: moet vóór {_fmt(deadline, tz, now)}, goedkoopste slot (€{sp.price:.3f})"
-            if not state.vannacht
-            else f"vannacht: vol vóór {_fmt(deadline, tz, now)}, goedkoopste slot (€{sp.price:.3f})"
-        )
-        remaining -= per_slot[sp.start]
-    if remaining > EPS:
-        notes.append(f"Auto: {remaining:.1f} kWh van het minimum past niet vóór {_fmt(deadline, tz, now)}")
+        mins = min(_hours(sp) * 60, left)
+        chosen[sp.start] = mins
+        left -= mins
+    if left > 0.5:
+        where = f"vóór {_fmt(deadline, tz, now)}" if deadline else "binnen de bekende prijzen"
+        notes.append(f"Auto: {left:.0f} min laden past niet {where}")
 
-    # b. Mag: tot vol, alleen goedkoop
-    optional = cp.need_full_kwh - sum(per_slot[k] for k in chosen)
-    for sp in sorted(plans, key=lambda s: (s.price, s.start)):
-        if optional <= EPS:
-            break
-        if sp.start in chosen:
-            continue
-        limit = max(cfg.car_opportunistic_price, cfg.force_fast_price)
-        if sp.price > limit:
-            break
-        chosen[sp.start] = f"goedkoop bijladen tot vol (€{sp.price:.3f} ≤ €{limit:.2f})"
-        optional -= per_slot[sp.start]
-
-    energy_left = cp.need_full_kwh
+    need_txt = f"{cp.need_km:.0f} km ({_dur(cp.need_minutes)})"
     for sp in plans:
-        if sp.start in chosen and energy_left > EPS:
-            sp.zappi_mode = "Fast"
-            sp.reasons["zappi"] = chosen[sp.start]
-            sp.car_kwh = min(per_slot[sp.start], energy_left)
-            energy_left -= sp.car_kwh
-            cp.planned_kwh += sp.car_kwh
-            if energy_left <= EPS and cp.need_full_kwh > 0:
-                cp.full_at = sp.end
+        if sp.start not in chosen:
+            continue
+        mins = chosen[sp.start]
+        sp.zappi_mode = "Fast"
+        sp.car_kwh = cfg.zappi_max_w / 1000 * mins / 60
+        cp.planned_kwh += sp.car_kwh
+        sp.reasons["zappi"] = (
+            f"vannacht: vol vóór {_fmt(deadline, tz, now)}, goedkoopste uren voor {need_txt} (€{sp.price:.3f})"
+            if deadline
+            else f"goedkoopste uren voor {need_txt} (€{sp.price:.3f})"
+        )
+        cp.full_at = sp.start + timedelta(minutes=mins)
     return cp
+
+
+def _dur(minutes: float) -> str:
+    m = int(round(minutes))
+    return f"{m} min" if m < 60 else f"{m // 60}u{m % 60:02d}"
 
 
 def _morning_eco(cfg, tz, sp: SlotPlan, state: State, car: CarPlan, battery_need_kwh: float, house_rest_kwh: float, season) -> tuple[bool, str]:

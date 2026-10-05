@@ -3,12 +3,16 @@ import { BATT_COLOR, BATT_LABEL, CAR_COLOR } from "./Timeline";
 import type { Plan } from "./types";
 
 const KIND: Record<string, string> = {
-  minimum: "naar minimum",
-  bijladen: "goedkoop bijladen",
+  goedkoopst: "goedkoopste uren",
+  vannacht: "vannacht vol",
   eco: "zon/accu",
-  direct: "goedkoop nu",
   handmatig: "handmatig",
 };
+
+function fmtMin(m: number): string {
+  const r = Math.round(m);
+  return r < 60 ? `${r} min` : `${Math.floor(r / 60)}u${String(r % 60).padStart(2, "0")}`;
+}
 
 function span(start: string, end: string, tz: string) {
   return `${relDay(start, tz)} – ${time(end, tz)}`;
@@ -24,6 +28,7 @@ export default function Sessions({ plan, tz }: { plan: Plan; tz: string }) {
           {car.name && car.range_km !== null && (
             <span className="text-slate-500">
               {car.name} · nu {Math.round(car.range_km)} km{car.max_range_km ? ` van ${car.max_range_km}` : ""}
+              {car.need_minutes > 1 ? ` · nog ${Math.round(car.need_km)} km = ${fmtMin(car.need_minutes)} laden` : ""}
             </span>
           )}
         </div>
@@ -52,7 +57,7 @@ export default function Sessions({ plan, tz }: { plan: Plan; tz: string }) {
           </ul>
         ) : (
           <p className="text-[12px] text-slate-500">
-            {car.name ? "Geen laadmoment nodig: boven het minimum en geen goedkope stroom." : "Geen auto aan de lader."}
+            {car.name ? "Geen laadmoment nodig: de auto is vol." : "Geen auto aan de lader."}
           </p>
         )}
       </div>

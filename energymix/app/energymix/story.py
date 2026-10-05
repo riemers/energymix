@@ -55,8 +55,8 @@ def tell(plan: Plan | None, state: State | None, tz: ZoneInfo) -> list[str]:
             nxt = next((s for s in plan.slots if s.zappi_mode == "Fast" and s.start > now), None)
             if nxt:
                 out.append(f"De {car.name} ({car.range_km:.0f} km) laadt vanaf {_t(nxt.start, tz, now)} à {_eur(nxt.price)}.")
-            elif car.need_full_kwh > 0.1 and car.planned_kwh < 0.1:
-                out.append(f"De {car.name} ({car.range_km:.0f} km) zit boven het minimum en wacht op goedkopere stroom.")
+            elif car.need_km < 1:
+                out.append(f"De {car.name} ({car.range_km:.0f} km) is vol.")
         if car.full_at:
             out.append(f"Verwacht vol om {_t(car.full_at, tz, now)}.")
     elif state.car_plugged:
