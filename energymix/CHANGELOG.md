@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.2.9
+- Fix: Zappi pendelde tussen Fast en Eco+ (losse goedkope kwartieren, zoals 9 minuten in het
+  lopende kwartier). De auto laadt nu in één aaneengesloten goedkoopste blok, zoals in Node-RED
+- Laadt de auto al, dan laadt hij door, tenzij een later blok meer dan 1 ct/kWh goedkoper is
+
 ## 0.2.8
 - Fix: laadt de auto, dan gaat de zon eerst naar de auto en pas de rest naar huis en accu.
   De verwachte accu-lijn stijgt dus niet meer tijdens het laden van de auto
