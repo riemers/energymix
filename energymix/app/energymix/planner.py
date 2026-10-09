@@ -1160,13 +1160,13 @@ def _plan_battery(cfg, tz, now, slots, plans: list[SlotPlan], state: State, fc: 
         if seed_best and seed_best[2] is None and seed_best[0] > 0 and (not tried or seed_best[0] >= tried[0]):
             skip_why = (
                 f"laden in de goedkoopste uren{' en bewaren voor de piek' if allow_hold else ''} levert na verliezen "
-                f"+€{seed_best[0]:.2f}/kWh op, minder dan de drempel €{cfg.arbitrage_min_spread:.2f}/kWh: niet geladen"
+                f"+€{seed_best[0]:.2f}/kWh op voor eigen gebruik, minder dan de drempel €{cfg.arbitrage_min_spread:.2f}/kWh: niet geladen"
             )
         elif tried and tried[0] > 0:
             per_kwh, i = tried
             skip_why = (
                 f"van het net laden om {_fmt(plans[i].start, tz, now)} (€{plans[i].price:.3f}) levert na verliezen "
-                f"+€{per_kwh:.2f}/kWh op, minder dan de drempel €{cfg.arbitrage_min_spread:.2f}/kWh: niet geladen"
+                f"+€{per_kwh:.2f}/kWh op voor eigen gebruik, minder dan de drempel €{cfg.arbitrage_min_spread:.2f}/kWh: niet geladen"
             )
 
     # Vertalen naar instellingen

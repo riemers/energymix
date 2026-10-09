@@ -123,7 +123,7 @@ class Config:
     # Prijzen en strategie
     cheap_price: float = 0.10
     force_fast_price: float = 0.15
-    arbitrage_min_spread: float = 0.08  # €/kWh winst na verliezen om van het net te laden
+    arbitrage_min_spread: float = 0.03  # €/kWh winst na verliezen om van het net te laden (eigen gebruik)
     export_min_spread: float = 0.15  # €/kWh winst na verliezen om terug te leveren
     export_price: str = "total"  # total (salderen) of energy (alleen kale prijs)
     energy_tax_eur: float = 0.11  # belasting+btw per kWh, als Tibber geen kale prijs geeft

@@ -83,7 +83,7 @@ verliezen. Vult de zon de accu toch al, dan laadt hij niet. Bij een negatieve pr
 Staat "Accu bewaren" aan, dan rekent hij ook laden én bewaren samen door: 's nachts goedkoop laden
 en de accu pas gebruiken bij de dure piek, met net zoveel kWh als tot het eind van de bekende prijzen
 loont (na ±13:00 dus tot en met morgen). In de herfst levert dat vaak 4 à 6 ct/kWh op, wat onder de
-standaard `arbitrage_min_spread` van 8 ct kan vallen; dan staat bij de planning hoeveel het zou
+drempel `arbitrage_min_spread` kan vallen (standaard 3 ct; dat dekt ongeveer de slijtage van de accu); dan staat bij de planning hoeveel het zou
 opleveren en waarom hij niet laadt.
 
 **Terugleveren.** Alleen als de schakelaar aan staat, het verschil na verliezen minstens
