@@ -1,6 +1,6 @@
 # Changelog
 
-## Nog niet uitgebracht
+## 0.2.31
 - Nieuwe instelling onder Net: "Telt die sensor de auto mee?". Kies je een huisverbruik-sensor die ook
   de auto bevat (zoals een netto-verbruiksensor), zet dit op Ja: Energymix trekt dan het Zappi-vermogen eraf
 - Verwacht huisverbruik: uren zonder genoeg metingen krijgen het gemiddelde van de gemeten uren in plaats
