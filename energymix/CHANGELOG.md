@@ -5,6 +5,13 @@
   als de zon. Zo zie je wat er van de zon overblijft voor de accu. De planner rekende hier al mee
   (gemiddelde per uur van de afgelopen 14 dagen), maar de grafiek liet het niet zien
 - Tooltip toont per tijdslot ook het huisverbruik en hoeveel zon er over is of tekortkomt
+- Accucapaciteit wordt gemeten: telkens als de accu minstens 20 procentpunt achter elkaar laadt of
+  ontlaadt, rekent Energymix uit hoeveel kWh er per procent in of uit ging. Het gemiddelde van laden en
+  ontladen (30 dagen) vervangt de ingestelde capaciteit in de planning. Uit te zetten met
+  Instellingen → Accu → Capaciteit → Vast. Valt de meting buiten de helft tot het dubbele van het
+  ingestelde getal, dan blijft het ingestelde getal staan
+- Accubolletje in het overzicht toont nu ook hoeveel kWh er in de accu zit en van hoeveel kWh
+  (met "(gemeten)" als de capaciteit gemeten is); Statistiek heeft een kaart "Capaciteit accu"
 
 ## 0.2.29
 - De planner gebruikt het ESS-minimum dat in de Victron is ingesteld (via MQTT) als ondergrens van de

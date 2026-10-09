@@ -38,6 +38,26 @@ export default function Stats({ stats, status }: { stats: StatsT | null; status:
       </div>
 
       <Card
+        title="Capaciteit accu"
+        right={<span className="text-[11px] text-slate-500">ingesteld {status.battery_capacity_kwh_set ?? status.battery_capacity_kwh} kWh</span>}
+      >
+        {stats.capacity?.kwh ? (
+          <p className="text-sm text-slate-300">
+            Gemeten <b>{stats.capacity.kwh.toString().replace(".", ",")} kWh</b> uit {stats.capacity.runs} keer flink laden of ontladen
+            {stats.capacity.charge_kwh && stats.capacity.discharge_kwh
+              ? ` (laden ${stats.capacity.charge_kwh.toString().replace(".", ",")}, ontladen ${stats.capacity.discharge_kwh.toString().replace(".", ",")} kWh)`
+              : ""}
+            . {status.battery_capacity_mode === "fixed" ? "Staat op vast: de planner rekent met het ingestelde getal." : "De planner rekent hiermee."}
+          </p>
+        ) : (
+          <p className="text-sm text-slate-500">
+            Nog niet genoeg gemeten. Zodra de accu een paar keer minstens 20 procentpunt achter elkaar is geladen of ontladen,
+            rekent Energymix uit hoeveel kWh er per procent in of uit gaat. Tot die tijd geldt het ingestelde getal.
+          </p>
+        )}
+      </Card>
+
+      <Card
         title="Rendement accu heen en terug"
         right={
           <span className="text-[11px] text-slate-500">
