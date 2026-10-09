@@ -159,7 +159,8 @@ function FieldRow({ f, value, onChange }: { f: SettingField; value: string | num
           className="w-full rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm outline-none focus:border-emerald-400/50">
           {f.kind.slice(7).split(",").map((o) => (
             <option key={o} value={o} className="bg-ink-900">
-              {o === "total" ? "Totaalprijs (salderen)" : o === "energy" ? "Kale energieprijs" : o}
+              {o === "total" ? "Totaalprijs (salderen)" : o === "energy" ? "Kale energieprijs"
+                : o === "careful" ? "Voorzichtig (alleen bekende prijzen)" : o === "week" ? "Zoals de afgelopen week (eerder vol laden)" : o}
             </option>
           ))}
         </select>

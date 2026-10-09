@@ -86,6 +86,12 @@ loont (na ±13:00 dus tot en met morgen). In de herfst levert dat vaak 4 à 6 ct
 drempel `arbitrage_min_spread` kan vallen (standaard 3 ct; dat dekt ongeveer de slijtage van de accu); dan staat bij de planning hoeveel het zou
 opleveren en waarom hij niet laadt.
 
+**Na de bekende prijzen.** Wat aan het eind van de planning nog in de accu zit, waardeert hij standaard
+voorzichtig: tegen een goedkope prijs uit de planning. Zo laadt hij niet voor dagen waarvan de prijs nog
+onbekend is. Kies je bij "Accu-inhoud na de bekende prijzen waarderen" voor "Zoals de afgelopen week",
+dan rekent hij met de mediaanprijs van de afgelopen 7 dagen. Na een windige, goedkope periode laadt hij
+dan vol en bewaart het voor als de wind gaat liggen.
+
 **Terugleveren.** Alleen als de schakelaar aan staat, het verschil na verliezen minstens
 `export_min_spread` per kWh is, de auto niet laadt, en nooit onder de reserve.
 
