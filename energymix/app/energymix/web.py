@@ -32,6 +32,7 @@ EDITABLE = [
     ("sunchance_entity", "Zonkans (%)", "entity", "Zon"),
     ("grid_power_entity", "Net vermogen (+ = afname)", "entity", "Net"),
     ("house_power_entity", "Huisverbruik (leeg = berekenen)", "entity", "Net"),
+    ("house_power_car", "Telt die sensor de auto mee?", "select:excl,incl", "Net"),
     ("grid_l1_entity", "Fase L1 (W of A)", "entity", "Net"),
     ("grid_l2_entity", "Fase L2 (W of A)", "entity", "Net"),
     ("grid_l3_entity", "Fase L3 (W of A)", "entity", "Net"),
@@ -145,6 +146,7 @@ def create_app(engine: Engine) -> web.Application:
         s["charge_w_used"] = round(charge_w)
         s["charge_w_source"] = "gemeten" if s.get("learned_charge_w") else "berekend uit DVCC max"
         s["roundtrip_setting"] = cfg.roundtrip_efficiency
+        s["house_profile"] = {**engine.house_info, "default_w": cfg.house_load_default_w}
         if st and st.soc is not None:
             need = max(0.0, cfg.battery_target_soc - st.soc) / 100 * cfg.battery_capacity_kwh
             s["to_target_kwh"] = round(need, 1)

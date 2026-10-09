@@ -88,6 +88,7 @@ class Config:
     grid_power_entity: str = ""  # positief = afname van het net
     battery_power_entity: str = ""  # positief = laden
     house_power_entity: str = ""  # leeg = afleiden uit de rest
+    house_power_car: str = "excl"  # incl = de sensor telt de auto mee; dan trekt Energymix de Zappi eraf
     zappi_power_entity: str = ""
 
     # Aansluiting en apparaten (per fase rekenen: één volle fase begrenst alles)
