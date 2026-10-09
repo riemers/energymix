@@ -61,3 +61,30 @@ def test_roundtrip_efficiency_needs_real_use(tmp_path):
     day = datetime.now(TZ).replace(hour=0, minute=0, second=0, microsecond=0) - timedelta(days=2)
     _cycle_day(st, day, lambda m: 30, lambda m: 50.0)  # alleen eigenverbruik
     assert st.roundtrip_efficiency(TZ, 47) == {"days": [], "overall": None}
+
+
+def test_learned_capacity_from_charge_and_discharge(tmp_path):
+    st = Store(tmp_path / "db.sqlite")
+    t = datetime.now(timezone.utc).replace(second=0, microsecond=0) - timedelta(days=2)
+    cap, soc = 52.0, 20.0
+    # 's nachts laden met 5 kW (in de accu 0,97 ervan naar SoC), daarna ontladen met 2 kW (1/0,97)
+    for _ in range(5 * 60):
+        soc = min(100.0, soc + 5 * 0.97 / 60 / cap * 100)
+        st.add_sample(t, soc=round(soc), battery_w=5000 if soc < 100 else 300)
+        t += timedelta(minutes=1)
+    for _ in range(12 * 60):
+        soc -= 2 / 0.97 / 60 / cap * 100
+        st.add_sample(t, soc=round(soc), battery_w=-2000)
+        t += timedelta(minutes=1)
+    c = st.learned_capacity()
+    assert c["runs"] == 2
+    assert c["charge_kwh"] > cap > c["discharge_kwh"]
+    assert abs(c["kwh"] - cap) < 2
+
+
+def test_learned_capacity_needs_big_swings(tmp_path):
+    st = Store(tmp_path / "db.sqlite")
+    t = datetime.now(timezone.utc) - timedelta(days=1)
+    for m in range(120):
+        st.add_sample(t + timedelta(minutes=m), soc=50 + m / 20, battery_w=1500)
+    assert st.learned_capacity()["kwh"] is None

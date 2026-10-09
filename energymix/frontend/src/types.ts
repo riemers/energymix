@@ -144,6 +144,16 @@ export interface Live {
   victron_phases: number[];
   sources: Record<string, string>;
   victron_connected: boolean;
+  battery?: {
+    capacity_kwh: number;
+    capacity_source: "gemeten" | "ingesteld";
+    configured_kwh: number;
+    measured_kwh: number | null;
+    measured_runs: number;
+    stored_kwh: number | null;
+    usable_kwh: number | null;
+    floor_pct: number;
+  };
   regulator: {
     current_a: number | null;
     target_a: number | null;
@@ -184,6 +194,8 @@ export interface Status {
   cheap_price: number;
   force_fast_price: number;
   battery_capacity_kwh: number;
+  battery_capacity_kwh_set?: number;
+  battery_capacity_mode?: string;
   battery_target_soc: number;
   battery_reserve_soc: number;
   ha_connected: boolean;
@@ -238,6 +250,7 @@ export interface Stats {
   to_target_hours?: number | null;
   samples: number;
   efficiency: { days: EfficiencyDay[]; overall: number | null };
+  capacity?: { kwh: number | null; runs: number; charge_kwh?: number | null; discharge_kwh?: number | null };
   roundtrip_setting: number;
 }
 

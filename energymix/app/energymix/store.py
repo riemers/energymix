@@ -200,6 +200,7 @@ class Store:
             "learned_charge_w": round(learned) if learned else None,
             "samples": len(rows),
             "efficiency": self.roundtrip_efficiency(tz, capacity_kwh),
+            "capacity": self.learned_capacity(),
         }
 
     def roundtrip_efficiency(self, tz, capacity_kwh: float, days: int = 60) -> dict:
@@ -258,6 +259,61 @@ class Store:
             tot_in, tot_out, tot_stored = tot_in + x["in"], tot_out + x["out"], tot_stored + stored
         overall = roundtrip_from(tot_in, tot_out, tot_stored) if out_days else None
         return {"days": out_days, "overall": round(overall, 3) if overall else None}
+
+    def learned_capacity(self, days: int = 30, min_swing: float = 20.0) -> dict:
+        """Echte accucapaciteit uit metingen: hoeveel kWh er in of uit ging per procent SoC.
+
+        Neemt stukken waarin de SoC minstens `min_swing` procentpunt in één richting liep
+        (laden of ontladen), telt het gemeten accuvermogen op en deelt door die SoC-sprong.
+        Laden geeft door verlies in de accu een iets te hoge waarde, ontladen een iets te
+        lage; het gemiddelde van beide ligt dicht bij de werkelijkheid. Blijft de SoC op 100%
+        hangen terwijl er nog wat stroom loopt, dan telt dat niet mee.
+        """
+        est: dict[int, list[float]] = {1: [], -1: []}
+        run = None  # [soc0, soc_ext, e, e_ext, dir]
+        prev_t = None
+
+        def close():
+            if run is None:
+                return
+            soc0, ext, _, e_ext, d = run
+            ds = ext - soc0
+            if d and abs(ds) >= min_swing and e_ext * d > 0:
+                est[d].append(abs(e_ext) / (abs(ds) / 100))
+
+        for r in self.samples(datetime.now(timezone.utc) - timedelta(days=days)):
+            soc, bw = r["soc"], r["battery_w"]
+            if soc is None or bw is None:
+                continue
+            t = datetime.fromisoformat(r["ts"])
+            dt_h = (t - prev_t).total_seconds() / 3600 if prev_t else None
+            prev_t = t
+            if run is None or dt_h is None or not 0 < dt_h <= 15 / 60:
+                close()
+                run = [soc, soc, 0.0, 0.0, 0]
+                continue
+            run[2] += bw * dt_h / 1000
+            if not run[4] and abs(soc - run[0]) >= 1:
+                run[4] = 1 if soc > run[0] else -1
+            d = run[4]
+            if not d:
+                run[1], run[3] = soc, run[2]
+            elif (soc - run[1]) * d > 0:
+                run[1], run[3] = soc, run[2]
+            elif (run[1] - soc) * d >= 2:  # SoC loopt terug: dit stuk is klaar
+                close()
+                run = [soc, soc, 0.0, 0.0, 0]
+        close()
+        ch, dis = est[1], est[-1]
+        if len(ch) + len(dis) < 2:
+            return {"kwh": None, "runs": len(ch) + len(dis)}
+        parts = [median(x) for x in (ch, dis) if x]
+        return {
+            "kwh": round(sum(parts) / len(parts), 1),
+            "runs": len(ch) + len(dis),
+            "charge_kwh": round(median(ch), 1) if ch else None,
+            "discharge_kwh": round(median(dis), 1) if dis else None,
+        }
 
     # ------------------------------------------------------------- auto's
     def get_car_learned(self, name: str) -> dict | None:

@@ -92,12 +92,15 @@ function Bubble({ node, icon, label, value, sub, ring, dim, side }: {
   );
 }
 
+const kwhTxt = (v: number) => `${v.toFixed(1).replace(".", ",")} kWh`;
+
 const ic = (Icon: typeof Sun, n: Node) => <Icon size={26} x={n.x - 13} y={n.y - 13} />;
 
 export default function Flow({ live }: { live: Live }) {
   const pv = Math.max(0, live.pv_w ?? 0);
   const grid = live.grid_w ?? 0;
   const batt = live.battery_w ?? 0;
+  const bi = live.battery;
   const zappi = Math.max(0, live.zappi_w ?? 0);
   const house = live.house_w;
   const cars = live.cars.slice(0, 2);
@@ -136,8 +139,11 @@ export default function Flow({ live }: { live: Live }) {
         node={NODES.battery}
         icon={ic(Battery, NODES.battery)}
         label="accu"
-        value={live.soc !== null ? `${Math.round(live.soc)}%` : "–"}
-        sub={batt > 30 ? `laadt ${watt(batt)}` : batt < -30 ? `levert ${watt(batt)}` : "accu"}
+        value={live.soc !== null ? `${Math.round(live.soc)}%${bi?.stored_kwh != null ? ` · ${kwhTxt(bi.stored_kwh)}` : ""}` : "–"}
+        sub={[
+          batt > 30 ? `laadt ${watt(batt)}` : batt < -30 ? `levert ${watt(batt)}` : null,
+          bi ? `van ${kwhTxt(bi.capacity_kwh)}${bi.capacity_source === "gemeten" ? " (gemeten)" : ""}` : batt > 30 || batt < -30 ? null : "accu",
+        ].filter(Boolean).join(" · ")}
         ring={live.soc}
       />
       {cars.map((c, i) => {

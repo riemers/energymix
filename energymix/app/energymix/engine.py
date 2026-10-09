@@ -19,7 +19,7 @@ from .executor import Executor
 from .forecast import house_per_slot, pv_per_slot
 from .ha import HomeAssistant
 from .phases import headroom_a, victron_phase_idx
-from .planner import CarState, Forecast, Plan, State, make_plan
+from .planner import CarState, Forecast, Plan, State, floor_pct, make_plan
 from .prices import PriceSlot, slot_at
 from .regulator import Regulator
 from .store import Store
@@ -278,7 +278,23 @@ class Engine:
         if str(cfg.victron_phases).strip().lower() == "auto":
             n = self.victron.vebus_phases() or 1
             cfg = replace(cfg, victron_phases=",".join(str(i) for i in range(1, n + 1)))
+        cap = self.measured_capacity(cfg)
+        if cap:
+            cfg = replace(cfg, battery_capacity_kwh=cap)
         return cfg
+
+    def measured_capacity(self, cfg: Config) -> float | None:
+        """Gemeten capaciteit, als die aanstaat en niet onzinnig ver van de ingestelde zit."""
+        if cfg.battery_capacity_mode != "measured":
+            return None
+        try:
+            cap = (self.battery_stats().get("capacity") or {}).get("kwh")
+        except Exception as e:  # noqa: BLE001
+            log.warning("Accucapaciteit meten: %s", e)
+            return None
+        if cap and 0.5 * cfg.battery_capacity_kwh <= cap <= 2 * cfg.battery_capacity_kwh:
+            return cap
+        return None
 
     # ------------------------------------------------------------ cyclus
     async def cycle(self) -> None:
@@ -482,4 +498,21 @@ class Engine:
             "sources": self.sources,
             "victron_connected": self.victron.connected,
             "regulator": reg,
+            "battery": self.battery_live(st),
+        }
+
+    def battery_live(self, st: State) -> dict:
+        """Capaciteit en inhoud voor het accubolletje."""
+        cap = self.cfg.battery_capacity_kwh
+        measured = (self.battery_stats().get("capacity") or {})
+        floor = floor_pct(self.cfg, st)
+        return {
+            "capacity_kwh": round(cap, 1),
+            "capacity_source": "gemeten" if self.measured_capacity(self.base_cfg) else "ingesteld",
+            "configured_kwh": self.base_cfg.battery_capacity_kwh,
+            "measured_kwh": measured.get("kwh"),
+            "measured_runs": measured.get("runs", 0),
+            "stored_kwh": round(cap * st.soc / 100, 1) if st.soc is not None else None,
+            "usable_kwh": round(max(0.0, cap * (st.soc - floor) / 100), 1) if st.soc is not None else None,
+            "floor_pct": floor,
         }

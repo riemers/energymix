@@ -110,6 +110,7 @@ class Config:
     # Accu
     has_battery: bool = True
     battery_capacity_kwh: float = 47.0
+    battery_capacity_mode: str = "measured"  # measured | fixed: gemeten capaciteit gebruiken zodra die er is
     battery_nominal_voltage: float = 52.0
     charge_efficiency: float = 0.93
     roundtrip_efficiency: float = 0.85
