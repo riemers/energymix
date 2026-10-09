@@ -59,6 +59,10 @@ class Victron:
             f"N/{p}/system/0/Ac/PvOnGrid/+/Power",
             f"N/{p}/system/0/Ac/PvOnOutput/+/Power",
             f"N/{p}/vebus/{self.vebus}/Ac/NumberOfPhases",
+            # AC-kant van de Multi's: voor het gemeten rendement heen en terug
+            f"N/{p}/vebus/{self.vebus}/Ac/ActiveIn/P",
+            f"N/{p}/vebus/{self.vebus}/Ac/Out/P",
+            f"N/{p}/vebus/{self.vebus}/Energy/+",
             # Alle accu's/monitoren die de GX kent (Lynx Shunt, BMS, ...)
             f"N/{p}/battery/+/Soc",
             f"N/{p}/battery/+/Dc/0/Power",
@@ -122,6 +126,31 @@ class Victron:
     def vebus_phases(self) -> int | None:
         v = self.values.get(f"vebus/{self.vebus}/Ac/NumberOfPhases")
         return int(v[0]) if v else None
+
+    def inverter_ac_w(self) -> float | None:
+        """Wat de Multi's netto aan AC opnemen (+, laden en eigenverbruik) of leveren (-).
+
+        Ingang min uitgang: wat van het net doorloopt naar de AC-uitgang telt zo niet mee.
+        """
+        a = self.get(f"vebus/{self.vebus}/Ac/ActiveIn/P")
+        o = self.get(f"vebus/{self.vebus}/Ac/Out/P")
+        return a - o if a is not None and o is not None else None
+
+    def inverter_energy_kwh(self) -> tuple[float | None, float | None]:
+        """Tellers van de Multi's (kWh): van AC naar de omvormer, en van de omvormer naar AC.
+
+        Tellers veranderen alleen als er stroom loopt, dus hier geen verouderingscheck.
+        """
+        if not self.connected:
+            return None, None
+        e = f"vebus/{self.vebus}/Energy/"
+
+        def total(names: tuple[str, ...]) -> float | None:
+            vals = [self.values[e + n][0] for n in names if e + n in self.values]
+            return sum(vals) if vals else None
+
+        return (total(("AcIn1ToInverter", "AcIn2ToInverter", "AcOutToInverter")),
+                total(("InverterToAcIn1", "InverterToAcIn2", "InverterToAcOut")))
 
     async def run(self) -> None:
         """Abonneer op de live waarden; blijft herverbinden."""

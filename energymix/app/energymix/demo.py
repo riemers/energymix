@@ -152,7 +152,8 @@ async def main() -> None:
                 soc = 55 + 30 * math.sin((h - 10) / 24 * 2 * math.pi) - (t.day % 3) * 5
                 bw = 3000 * math.cos((h - 10) / 24 * 2 * math.pi)
                 store.add_sample(t, soc=soc, pv_w=max(0, 5000 * math.sin((h - 7) / 12 * math.pi)), grid_w=200,
-                                 battery_w=bw, house_w=500 + 400 * (17 <= h <= 22), zappi_w=0)
+                                 battery_w=bw, house_w=500 + 400 * (17 <= h <= 22), zappi_w=0,
+                                 inverter_ac_w=(bw / 0.93 if bw > 0 else bw * 0.92) + 40 + 30 * math.sin(t.day))
 
         async def wiggle():
             while True:

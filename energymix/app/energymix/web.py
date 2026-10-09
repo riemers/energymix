@@ -140,6 +140,7 @@ def create_app(engine: Engine) -> web.Application:
         charge_w = s.get("learned_charge_w") or cfg.dvcc_max_charge_current * cfg.battery_nominal_voltage * cfg.charge_efficiency
         s["charge_w_used"] = round(charge_w)
         s["charge_w_source"] = "gemeten" if s.get("learned_charge_w") else "berekend uit DVCC max"
+        s["roundtrip_setting"] = cfg.roundtrip_efficiency
         if st and st.soc is not None:
             need = max(0.0, cfg.battery_target_soc - st.soc) / 100 * cfg.battery_capacity_kwh
             s["to_target_kwh"] = round(need, 1)
