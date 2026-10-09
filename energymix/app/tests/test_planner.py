@@ -557,22 +557,24 @@ def test_uses_victron_ess_minimum_as_floor():
     assert min(s.soc for s in plan.slots) == 5.0
     # Al onder het minimum: dat zegt hij ook zo
     plan = make_plan(cfg(house_load_default_w=600, hold_enabled=True), prices, State(soc=8), at(14))
-    assert "nu al op of onder de ondergrens (8%; minimum 10%)" in plan.summary["empty_why"]
+    assert "nu al op of onder het minimum (8%, minimum 10%)" in plan.summary["empty_why"]
 
 
-def test_margin_keeps_battery_above_ess_minimum():
-    # 20% en 's avonds verbruik: zonder marge zakt hij naar 10%, met 10% marge blijft hij op 20%
+def test_margin_charges_buffer_but_battery_may_go_lower():
+    # Laag en drempel te hoog voor gewoon laden: zonder marge laadt hij niets en zakt hij naar 5%.
+    # Met marge laadt hij vooraf in de goedkoopste uren, zodat er in de dure uren ±15% in zit.
     prices = hourly(at(0), AUTUMN * 2)
-    plan = make_plan(cfg(house_load_default_w=600, battery_margin_pct=10), prices, State(soc=30, min_soc=10), at(14))
-    assert min(s.soc for s in plan.slots) >= 19.9
-    held = [s for s in plan.slots if s.reasons.get("ess", "").startswith("marge")]
-    assert held and all(s.ess_state == ESS_KEEP_CHARGED and s.dvcc_current == 0 for s in held)
-    assert "20%: minimum 10% + 10% marge" in held[0].reasons["ess"]
-
-
-def test_margin_holds_when_already_below():
-    prices = hourly(at(0), AUTUMN * 2)
-    plan = make_plan(cfg(house_load_default_w=600, battery_margin_pct=10), prices, State(soc=8, min_soc=10), at(14))
-    first = plan.slots[0]
-    assert first.ess_state == ESS_KEEP_CHARGED and first.dvcc_current == 0
-    assert min(s.soc for s in plan.slots) == 8.0
+    st = State(soc=12, min_soc=5)
+    kw = dict(house_load_default_w=900, arbitrage_min_spread=0.5)
+    base = make_plan(cfg(**kw), prices, st, at(14))
+    assert sum(s.grid_charge_kwh for s in base.slots) == 0
+    assert min(s.soc for s in base.slots) == 5.0
+    marg = make_plan(cfg(**kw, battery_margin_pct=10), prices, st, at(14))
+    charged = [s for s in marg.slots if s.grid_charge_kwh > 0]
+    assert charged and all("marge" in s.reasons["ess"] for s in charged)
+    # In de dure avond van vandaag blijft er een buffer; zonder marge was hij daar leeg
+    evening = [s for s in marg.slots if s.start.astimezone(TZ).day == 6 and 17 <= s.start.astimezone(TZ).hour <= 21]
+    assert min(s.soc for s in evening) >= 14.5
+    assert marg.summary["margin_charge_kwh"] > 0 and not marg.summary["grid_charge_skip"]
+    # Geen "bewaren" op de marge: in het echt mag hij onder 15% komen
+    assert not any(s.dvcc_current == 0 for s in marg.slots)
