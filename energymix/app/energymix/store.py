@@ -23,6 +23,28 @@ CREATE TABLE IF NOT EXISTS samples (
     ts TEXT PRIMARY KEY, soc REAL, pv_w REAL, grid_w REAL, battery_w REAL, house_w REAL, zappi_w REAL, price REAL
 );
 """
+# Later toegevoegde kolommen (bestaande databases krijgen ze erbij)
+SAMPLE_EXTRA = {"inverter_ac_w": "REAL", "ac_to_inv_kwh": "REAL", "inv_to_ac_kwh": "REAL"}
+SAMPLE_COLS = ["soc", "pv_w", "grid_w", "battery_w", "house_w", "zappi_w", "price", *SAMPLE_EXTRA]
+
+# Rendement heen en terug: alleen dagen die bijna helemaal gemeten zijn en waarop de accu
+# echt gebruikt is, anders zegt de verhouding niets
+EFF_MIN_COVERAGE_H = 20
+EFF_MIN_KWH = 2.0
+
+
+def roundtrip_from(e_in: float, e_out: float, d_stored: float) -> float | None:
+    """Rendement AC naar AC uit wat de Multi's opnamen (e_in), leverden (e_out) en wat er
+    netto in de accu bijkwam (d_stored, kWh uit de SoC).
+
+    Heen en terug elk de wortel van het totaal (s): opgeslagen = e_in*s - e_out/s.
+    Oplossen naar s geeft een tweedegraadsvergelijking; het rendement is s².
+    """
+    if e_in <= 0 or e_out <= 0:
+        return None
+    s = (d_stored + (d_stored ** 2 + 4 * e_in * e_out) ** 0.5) / (2 * e_in)
+    eff = s * s
+    return eff if 0.5 <= eff <= 1.0 else None  # daarbuiten klopt de meting niet
 
 
 class Store:
@@ -31,6 +53,11 @@ class Store:
         self.db = sqlite3.connect(path)
         self.db.row_factory = sqlite3.Row
         self.db.executescript(SCHEMA)
+        have = {r["name"] for r in self.db.execute("PRAGMA table_info(samples)")}
+        for col, kind in SAMPLE_EXTRA.items():
+            if col not in have:
+                self.db.execute(f"ALTER TABLE samples ADD COLUMN {col} {kind}")
+        self.db.commit()
 
     # ------------------------------------------------------------- prijzen
     def save_prices(self, slots) -> None:
@@ -72,7 +99,7 @@ class Store:
 
     # ------------------------------------------------------------- metingen
     def add_sample(self, ts: datetime, **values) -> None:
-        cols = ["soc", "pv_w", "grid_w", "battery_w", "house_w", "zappi_w", "price"]
+        cols = SAMPLE_COLS
         self.db.execute(
             f"INSERT OR REPLACE INTO samples (ts, {', '.join(cols)}) VALUES (?, {', '.join('?' * len(cols))})",
             (ts.astimezone(timezone.utc).isoformat(), *(values.get(c) for c in cols)),
@@ -172,7 +199,65 @@ class Store:
             "median_daily_min_soc": median(mins) if mins else None,
             "learned_charge_w": round(learned) if learned else None,
             "samples": len(rows),
+            "efficiency": self.roundtrip_efficiency(tz, capacity_kwh),
         }
+
+    def roundtrip_efficiency(self, tz, capacity_kwh: float, days: int = 60) -> dict:
+        """Gemeten rendement heen en terug (AC naar AC) per dag en over de hele periode.
+
+        Per minuut wat de Multi's aan AC opnemen en leveren: uit hun energietellers als die er
+        zijn, anders uit het gemeten vermogen. Wat er netto in de accu bijkwam (SoC begin en
+        eind van de dag) wordt verrekend, zodat ook dagen zonder volle cyclus meetellen.
+        """
+        rows = self.samples(datetime.now(timezone.utc) - timedelta(days=days))
+        per_day: dict[str, dict] = {}
+        prev = None
+        for r in rows:
+            t = datetime.fromisoformat(r["ts"])
+            d = t.astimezone(tz).date().isoformat()
+            day = per_day.setdefault(d, {"in": 0.0, "out": 0.0, "hours": 0.0, "soc0": None, "soc1": None})
+            if r["soc"] is not None:
+                if day["soc0"] is None:
+                    day["soc0"] = r["soc"]
+                day["soc1"] = r["soc"]
+            if prev is not None:
+                dt_h = (t - prev[0]).total_seconds() / 3600
+                if 0 < dt_h <= 15 / 60:
+                    p = prev[1]
+                    d_in = d_out = None
+                    if None not in (r["ac_to_inv_kwh"], r["inv_to_ac_kwh"], p["ac_to_inv_kwh"], p["inv_to_ac_kwh"]):
+                        d_in = r["ac_to_inv_kwh"] - p["ac_to_inv_kwh"]
+                        d_out = r["inv_to_ac_kwh"] - p["inv_to_ac_kwh"]
+                        limit = 30 * dt_h  # meer dan 30 kW kan niet: teller gereset of verkeerd
+                        if not (0 <= d_in <= limit and 0 <= d_out <= limit):
+                            prev = (t, r)  # deze minuut overslaan
+                            continue
+                    elif r["inverter_ac_w"] is not None:
+                        kwh = r["inverter_ac_w"] * dt_h / 1000
+                        d_in, d_out = max(0.0, kwh), max(0.0, -kwh)
+                    if d_in is not None:
+                        day["in"] += d_in
+                        day["out"] += d_out
+                        day["hours"] += dt_h
+            prev = (t, r)
+
+        out_days = []
+        tot_in = tot_out = tot_stored = 0.0
+        for d in sorted(per_day):
+            x = per_day[d]
+            if x["hours"] < EFF_MIN_COVERAGE_H or x["in"] < EFF_MIN_KWH or x["out"] < EFF_MIN_KWH:
+                continue
+            if x["soc0"] is None or x["soc1"] is None:
+                continue
+            stored = capacity_kwh * (x["soc1"] - x["soc0"]) / 100
+            eff = roundtrip_from(x["in"], x["out"], stored)
+            if eff is None:
+                continue
+            out_days.append({"date": d, "efficiency": round(eff, 3),
+                             "in_kwh": round(x["in"], 1), "out_kwh": round(x["out"], 1)})
+            tot_in, tot_out, tot_stored = tot_in + x["in"], tot_out + x["out"], tot_stored + stored
+        overall = roundtrip_from(tot_in, tot_out, tot_stored) if out_days else None
+        return {"days": out_days, "overall": round(overall, 3) if overall else None}
 
     # ------------------------------------------------------------- auto's
     def get_car_learned(self, name: str) -> dict | None:
