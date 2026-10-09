@@ -49,7 +49,8 @@ export default function Timeline({ plan, tz, cheap, fast, target, reserve }: Pro
     const x = (t: number) => PAD_L + ((Math.min(Math.max(t, t0), t1) - t0) / (t1 - t0)) * innerW;
     const y = (p: number) => 10 + ((max - p) / (max - min)) * (CHART_H - 20);
     const ySoc = (s: number) => 10 + ((100 - s) / 100) * (CHART_H - 20);
-    const pvMaxKw = Math.max(0.5, ...slots.map((s) => s.pv_kwh / ((Date.parse(s.end) - Date.parse(s.start)) / 3600_000)));
+    // Zon en verwacht huisverbruik op dezelfde kW-schaal, zodat je ziet wat er overblijft voor de accu
+    const pvMaxKw = Math.max(0.5, ...slots.map((s) => Math.max(s.pv_kwh, s.house_kwh) / hoursOf(s)));
     return { t0, t1, max, min, x, y, ySoc, pvMaxKw };
   }, [slots, width]);
 
@@ -99,6 +100,9 @@ export default function Timeline({ plan, tz, cheap, fast, target, reserve }: Pro
     if (b === undefined || pvKw[i] > pvKw[b]) byDay.set(d, i);
   });
   byDay.forEach((i) => pvKw[i] > 0.2 && peaks.push({ x: pvPts[i][0], y: pvPts[i][1], kw: pvKw[i] }));
+  const houseLine = slots
+    .map((s, i) => `${i ? "L" : "M"}${pvPts[i][0].toFixed(1)},${(CHART_H - 10 - (s.house_kwh / hoursOf(s) / pvMaxKw) * (CHART_H * 0.45)).toFixed(1)}`)
+    .join(" ");
   const pvArea = pvPts.length && pvLine
     ? `M${x(t0)},${CHART_H - 10} ` + pvPts.map((p) => `L${p[0].toFixed(1)},${p[1].toFixed(1)}`).join(" ") + ` L${x(t1)},${CHART_H - 10} Z`
     : "";
@@ -149,6 +153,7 @@ export default function Timeline({ plan, tz, cheap, fast, target, reserve }: Pro
         {/* Zon over de prijsbalken heen: lichte vulling + duidelijke rand, met de piek erbij */}
         {pvArea && <path d={pvArea} fill="url(#pvfill)" style={{ mixBlendMode: "screen" }} />}
         {pvLine && <path d={pvLine} fill="none" stroke="#fde047" strokeWidth={1.6} strokeOpacity={0.9} strokeLinejoin="round" style={{ filter: "drop-shadow(0 0 3px rgba(253,224,71,.55))" }} />}
+        {houseLine && <path d={houseLine} fill="none" stroke="#f87171" strokeWidth={1.4} strokeOpacity={0.85} strokeDasharray="4 3" strokeLinejoin="round" />}
         {peaks.map((pk) => (
           <g key={pk.x}>
             <circle cx={pk.x} cy={pk.y} r={2.5} fill="#fde047" />
@@ -270,7 +275,13 @@ function Tooltip({ slot, tz, left, width }: { slot: SlotPlan; tz: string; left: 
       <div className="mt-1 flex flex-wrap gap-x-3 text-[11px] text-slate-400">
         {slot.soc !== null && <span>accu <b className="text-emerald-300">{slot.soc.toFixed(0)}%</b></span>}
         {slot.car_range_km !== null && <span>auto <b className="text-pink-300">{slot.car_range_km} km</b></span>}
-        {slot.pv_kwh > 0.05 && <span>zon {(slot.pv_kwh / ((Date.parse(slot.end) - Date.parse(slot.start)) / 3600_000)).toFixed(1)} kW</span>}
+        {slot.pv_kwh > 0.05 && <span>zon {(slot.pv_kwh / hoursOf(slot)).toFixed(1)} kW</span>}
+        <span>huis <b className="text-red-300">{(slot.house_kwh / hoursOf(slot)).toFixed(1)} kW</b></span>
+        {slot.pv_kwh > 0.05 && (
+          <span>
+            {slot.pv_kwh >= slot.house_kwh ? "over" : "tekort"} {(Math.abs(slot.pv_kwh - slot.house_kwh) / hoursOf(slot)).toFixed(1)} kW
+          </span>
+        )}
       </div>
       {chips.length > 0 && (
         <div className="mt-2 flex flex-wrap gap-1">
@@ -290,6 +301,7 @@ function Legend() {
     ...Object.values(LEVELS).map((l) => [l.color, l.label, "box"] as [string, string, "box"]),
     ["#34d399", "accu verwacht", "line"],
     ["#fde047", "zon verwacht", "line"],
+    ["#f87171", "huisverbruik verwacht (zonder auto)", "line"],
     [CAR_COLOR.Fast, "auto Fast", "box"],
     [CAR_COLOR.Eco, "auto Eco", "box"],
     [BATT_COLOR.charge, "accu laden", "box"],
