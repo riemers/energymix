@@ -1,6 +1,6 @@
 # Changelog
 
-## Volgende versie
+## 0.2.23
 - Accu: laden én bewaren worden samen doorgerekend. 's Nachts goedkoop laden en de accu sparen tot de
   dure avondpiek, met alleen zoveel kWh als tot het eind van de bekende prijzen loont. Eerder probeerde
   de planner één actie tegelijk, en dan leverde nachtladen niets op omdat de accu in de goedkope ochtend
