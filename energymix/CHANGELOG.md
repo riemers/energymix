@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.2.23
+- Accu: laden én bewaren worden samen doorgerekend. 's Nachts goedkoop laden en de accu sparen tot de
+  dure avondpiek, met alleen zoveel kWh als tot het eind van de bekende prijzen loont. Eerder probeerde
+  de planner één actie tegelijk, en dan leverde nachtladen niets op omdat de accu in de goedkope ochtend
+  alweer leegliep. Bewaren blijft alleen gebeuren als de schakelaar "Accu bewaren" aan staat
+- Laadt hij niet van het net omdat het te weinig oplevert, dan staat bij de planning hoeveel het per kWh
+  zou opleveren en wat de drempel is
 ## 0.2.22
 - Zon in de planningsgrafiek beter zichtbaar: gele lijn met gloed bovenop de prijsbalken, lichte
   vulling, de piek per dag erbij (☀ 4,4 kW) en "zon verwacht" in de legenda
