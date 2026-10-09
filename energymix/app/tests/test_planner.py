@@ -479,3 +479,35 @@ def test_hold_off_by_default_but_shows_what_it_would_save():
     on = make_plan(cfg(house_load_default_w=1500, grid_charge_enabled=False, hold_enabled=True), prices, State(soc=40), at(0, 5))
     assert any(s.dvcc_current == 0 for s in on.slots)
     assert on.summary["hold_value_eur"] == plan.summary["hold_value_eur"]
+
+
+
+AUTUMN = [0.23, 0.22, 0.215, 0.21, 0.215, 0.225, 0.26, 0.30, 0.31, 0.28, 0.26, 0.25,
+          0.245, 0.245, 0.25, 0.26, 0.28, 0.32, 0.34, 0.33, 0.30, 0.27, 0.25, 0.24]
+
+
+def test_autumn_small_spread_explains_why_no_grid_charge():
+    # Herfst: nacht €0,21, avondpiek €0,34. Na laadverlies een paar cent winst, onder de drempel
+    prices = hourly(at(0), AUTUMN * 2)
+    plan = make_plan(cfg(house_load_default_w=600), prices, State(soc=18), at(14))
+    assert plan.summary["grid_charge_kwh"] == 0
+    assert any("drempel €0,08/kWh: niet geladen" in n for n in plan.notes)
+
+
+def test_autumn_charges_at_night_and_keeps_it_for_the_evening_peak():
+    # Accu bijna leeg, weinig zon. 's Nachts laden alleen loont niet (de accu loopt in de
+    # goedkope ochtend weer leeg); laden én bewaren tot de avondpiek wel.
+    prices = hourly(at(0), AUTUMN * 2)
+    c = cfg(house_load_default_w=600, arbitrage_min_spread=0.04, hold_enabled=True)
+    plan = make_plan(c, prices, State(soc=18), at(14))
+    h = by_hour(plan, day=7)
+    charges = [b for b in plan.battery_sessions if b["kind"] == "charge"]
+    assert charges and all(b["start"].startswith("2026-10-07T0") for b in charges)
+    assert h[5].ess_state == ESS_KEEP_CHARGED and h[5].dvcc_current == 0  # bewaren in de goedkope ochtend
+    assert h[18].ess_state == ESS_OPTIMIZED and h[18].soc < h[17].soc  # accu dekt de piek
+    assert plan.summary["saving_eur"] > 0
+    assert not any("niet geladen" in n for n in plan.notes)
+    # Zonder bewaren niet de moeite (onder de drempel), maar de schakelaar laat zien wat het scheelt
+    plan = make_plan(cfg(house_load_default_w=600, arbitrage_min_spread=0.04), prices, State(soc=18), at(14))
+    assert plan.summary["grid_charge_kwh"] == 0
+    assert plan.summary["hold_value_eur"] > 0.1
