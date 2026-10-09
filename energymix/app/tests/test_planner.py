@@ -513,3 +513,10 @@ def test_autumn_charges_at_night_and_keeps_it_for_the_evening_peak():
     plan = make_plan(cfg(house_load_default_w=600, arbitrage_min_spread=0.04), prices, State(soc=18), at(14))
     assert plan.summary["grid_charge_kwh"] == 0
     assert plan.summary["hold_value_eur"] > 0.1
+
+
+def test_without_hold_note_says_what_hold_would_save():
+    prices = hourly(at(0), AUTUMN * 2)
+    plan = make_plan(cfg(house_load_default_w=600, arbitrage_min_spread=0.04), prices, State(soc=18), at(14))
+    assert plan.summary["grid_charge_kwh"] == 0
+    assert any('met "Accu bewaren" aan scheelt' in n for n in plan.notes)

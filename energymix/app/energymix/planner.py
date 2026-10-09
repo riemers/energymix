@@ -351,6 +351,12 @@ def make_plan(
             notes.append(f"Accu bewaren: {summary['empty_why']}")
         if summary.get("grid_charge_skip"):
             notes.append(f"Accu: {summary['grid_charge_skip']}")
+        if not cfg.hold_enabled and summary["hold_value_eur"] >= 0.05:
+            # Zonder bewaren loopt geladen stroom in de goedkope uren meteen weer weg
+            notes.append(
+                f"Accu: met \"Accu bewaren\" aan scheelt deze planning €{summary['hold_value_eur']:.2f} "
+                "(goedkoop laden en vasthouden tot de dure uren)"
+            )
     elif cfg.has_battery:
         notes.append("Accu-SoC onbekend: accu niet gepland")
 
@@ -374,7 +380,8 @@ def make_plan(
 ECO_KW = 3.7  # geschat laadvermogen op Eco (zon/accu)
 MIN_EXPORT_KWH = 0.5  # minder terugleveren in een slot is de moeite niet
 HOLD_MIN_MINUTES = 60  # bewaren altijd in blokken van minstens een uur, geen losse kwartiertjes
-HOLD_STICKY_EUR = 0.03  # liever een bewaar-blok verlengen dan een los blok erbij
+HOLD_STICKY_EUR = 0.03
+CHARGE_STEP_KWH = 1.0  # laden van het net per portie afwegen  # liever een bewaar-blok verlengen dan een los blok erbij
 
 
 def _car_sessions(plans: list[SlotPlan], car: CarPlan, state: State, speed: float = 65.0, fast_kw: float = 11.0) -> list[dict]:
@@ -909,6 +916,11 @@ def _plan_battery(cfg, tz, now, slots, plans: list[SlotPlan], state: State, fc: 
     hold_why: dict[int, str] = {}
 
     step_charge = [min(charge_cap[i], charge_w / 1000 * _hours(plans[i])) for i in range(n)]
+    # Laden in kleine porties: vaak loont alleen de eerste kWh (die de avondpiek dekt) en de rest
+    # niet (die vervangt goedkopere nachtstroom). Met een heel slot tegelijk middelde dat weg.
+    # Minstens de minimale laadstroom, anders valt het later weg als "mini-actie".
+    min_e = [cfg.dvcc_min_charge_current * cfg.battery_nominal_voltage * eff_c / 1000 * _hours(sp) for sp in plans]
+    step_small = [min(step_charge[i], max(CHARGE_STEP_KWH, min_e[i] * 1.05)) for i in range(n)]
     # Alleen zinvolle kandidaten proberen: laden in de goedkoopste helft, leveren in de duurste
     by_price = sorted(p.price for p in plans)
     by_sell = sorted(p.sell_price for p in plans)
@@ -943,7 +955,7 @@ def _plan_battery(cfg, tz, now, slots, plans: list[SlotPlan], state: State, fc: 
     if (cfg.grid_charge_enabled and cap) and charge_idx:
         cheap_first = sorted(charge_idx, key=lambda k: (plans[k].price, k))
         room_e = max(0.0, (target_e - floor_e) / eff_c)
-        budgets = [room_e * f for f in (0.1, 0.2, 0.3, 0.4, 0.5, 0.65, 0.8, 1.0)]
+        budgets = [1.0, 2.0, 3.0] + [room_e * f for f in (0.1, 0.2, 0.3, 0.4, 0.5, 0.65, 0.8, 1.0)]
         levels = sorted({p.price for p in plans})
         cutoffs = [None]
         if allow_hold:
@@ -1016,7 +1028,8 @@ def _plan_battery(cfg, tz, now, slots, plans: list[SlotPlan], state: State, fc: 
             sp = plans[i]
             # Laden van het net
             if (cfg.grid_charge_enabled or sp.price < 0) and gc[i] < step_charge[i] - EPS:
-                delta = step_charge[i] - gc[i]
+                # Negatieve prijs: meteen vol; anders in porties (de eerste portie minstens de minimale stroom)
+                delta = step_charge[i] - gc[i] if sp.price < 0 else min(step_charge[i] - gc[i], step_small[i])
                 gc[i] += delta
                 sim = simulate()
                 gc[i] -= delta
@@ -1149,7 +1162,7 @@ def _plan_battery(cfg, tz, now, slots, plans: list[SlotPlan], state: State, fc: 
         for i in charge_idx:
             if plans[i].price < 0 or step_charge[i] <= EPS:
                 continue
-            gc[i] = step_charge[i]
+            gc[i] = step_small[i]
             sim = simulate()
             gc[i] = 0.0
             applied = sim.imp[i] - cur.imp[i]
@@ -1160,13 +1173,13 @@ def _plan_battery(cfg, tz, now, slots, plans: list[SlotPlan], state: State, fc: 
         if seed_best and seed_best[2] is None and seed_best[0] > 0 and (not tried or seed_best[0] >= tried[0]):
             skip_why = (
                 f"laden in de goedkoopste uren{' en bewaren voor de piek' if allow_hold else ''} levert na verliezen "
-                f"+€{seed_best[0]:.2f}/kWh op voor eigen gebruik, minder dan de drempel €{cfg.arbitrage_min_spread:.2f}/kWh: niet geladen"
+                f"+€{seed_best[0]:.3f}/kWh op voor eigen gebruik, minder dan de drempel €{cfg.arbitrage_min_spread:.2f}/kWh: niet geladen"
             )
         elif tried and tried[0] > 0:
             per_kwh, i = tried
             skip_why = (
                 f"van het net laden om {_fmt(plans[i].start, tz, now)} (€{plans[i].price:.3f}) levert na verliezen "
-                f"+€{per_kwh:.2f}/kWh op voor eigen gebruik, minder dan de drempel €{cfg.arbitrage_min_spread:.2f}/kWh: niet geladen"
+                f"+€{per_kwh:.3f}/kWh op voor eigen gebruik, minder dan de drempel €{cfg.arbitrage_min_spread:.2f}/kWh: niet geladen"
             )
 
     # Vertalen naar instellingen

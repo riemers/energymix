@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.2.27
+- Laden van het net wordt per kWh afgewogen in plaats van per heel kwartier of uur. Vaak loont alleen de
+  eerste kWh (die de avondpiek dekt) en de rest niet (die vervangt goedkopere nachtstroom); per heel
+  slot middelde dat weg en laadde hij niets
+- Staat "Accu bewaren" uit terwijl het wat zou opleveren, dan staat bij de planning hoeveel. Zonder
+  bewaren loopt stroom die je 's middags laadt in de goedkope uren meteen weer weg
+- De winst per kWh in de uitleg met drie decimalen, zodat "+€0,037 onder de drempel €0,04" klopt
+
 ## 0.2.26
 - Getallen in Instellingen kun je nu gewoon typen, ook met een komma (0,04). Eerder verdween de punt
   tijdens het typen, waardoor je makkelijk 0,4 of 4 kreeg in plaats van 0,04
