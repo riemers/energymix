@@ -90,7 +90,8 @@ opleveren en waarom hij niet laadt.
 voorzichtig: tegen een goedkope prijs uit de planning. Zo laadt hij niet voor dagen waarvan de prijs nog
 onbekend is. Kies je bij "Accu-inhoud na de bekende prijzen waarderen" voor "Zoals de afgelopen week",
 dan rekent hij met de mediaanprijs van de afgelopen 7 dagen. Na een windige, goedkope periode laadt hij
-dan vol en bewaart het voor als de wind gaat liggen.
+dan vol en bewaart het voor als de wind gaat liggen. Dat doet hij pas als de prijzen van morgen bekend
+zijn (na ±13:00): is morgen goedkoper, dan laadt hij vandaag alleen wat nodig is en morgen vol.
 
 **Terugleveren.** Alleen als de schakelaar aan staat, het verschil na verliezen minstens
 `export_min_spread` per kWh is, de auto niet laadt, en nooit onder de reserve.

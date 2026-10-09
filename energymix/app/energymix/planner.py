@@ -384,7 +384,8 @@ ECO_KW = 3.7  # geschat laadvermogen op Eco (zon/accu)
 MIN_EXPORT_KWH = 0.5  # minder terugleveren in een slot is de moeite niet
 HOLD_MIN_MINUTES = 60  # bewaren altijd in blokken van minstens een uur, geen losse kwartiertjes
 HOLD_STICKY_EUR = 0.03
-CHARGE_STEP_KWH = 1.0  # laden van het net per portie afwegen  # liever een bewaar-blok verlengen dan een los blok erbij
+CHARGE_STEP_KWH = 1.0
+WEEK_VALUE_MIN_HOURS = 18  # "zoals de afgelopen week" pas als de prijzen van morgen bekend zijn  # laden van het net per portie afwegen  # liever een bewaar-blok verlengen dan een los blok erbij
 
 
 def _car_sessions(plans: list[SlotPlan], car: CarPlan, state: State, speed: float = 65.0, fast_kw: float = 11.0) -> list[dict]:
@@ -854,7 +855,11 @@ def _plan_battery(cfg, tz, now, slots, plans: list[SlotPlan], state: State, fc: 
     # afgelopen week normaal kostte. Na een windige (goedkope) periode laadt hij dan vol, in de
     # verwachting dat het daarna weer duurder wordt.
     terminal_why = "voorzichtig: goedkope prijs uit de planning"
-    if cfg.battery_end_value == "week" and past_median is not None and past_median * eff_d > terminal_value:
+    # Alleen als de prijzen van morgen al bekend zijn (na ±13:00): anders zou hij vóór 13:00 al vol
+    # laden terwijl morgen misschien nog goedkoper is. Eerst kiezen tussen vandaag en morgen.
+    known_h = (plans[-1].end - now).total_seconds() / 3600 if plans else 0
+    if (cfg.battery_end_value == "week" and past_median is not None and past_median * eff_d > terminal_value
+            and known_h >= WEEK_VALUE_MIN_HOURS):
         terminal_value = past_median * eff_d
         terminal_why = f"mediaan afgelopen week €{past_median:.3f}, na verlies"
 

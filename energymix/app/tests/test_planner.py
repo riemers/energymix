@@ -533,3 +533,18 @@ def test_week_end_value_fills_battery_after_cheap_windy_spell():
     assert careful.summary["grid_charge_kwh"] < 1
     assert week.summary["grid_charge_kwh"] > 10
     assert "afgelopen week" in week.summary["end_value_why"]
+
+
+def test_week_end_value_waits_for_tomorrows_prices_and_picks_cheapest_day():
+    history = hourly(at(0) - timedelta(days=7), [0.30] * 24 * 7)
+    c = cfg(house_load_default_w=500, arbitrage_min_spread=0.03, battery_end_value="week")
+    # 10:00, alleen vandaag bekend: niet vol laden, morgen kan goedkoper zijn
+    today = hourly(at(0), [0.21] * 24)
+    plan = make_plan(c, today, State(soc=15), at(10), history=history + today)
+    assert plan.summary["grid_charge_kwh"] < 3
+    # 14:00, morgen nog goedkoper bekend: vandaag hooguit wat nodig is, vol laden morgen
+    both = hourly(at(0), [0.21] * 24 + [0.15] * 24)
+    plan = make_plan(c, both, State(soc=15), at(14), history=history + both)
+    today_kwh = sum(s.grid_charge_kwh for s in plan.slots if s.start.astimezone(TZ).day == 6)
+    tomorrow_kwh = sum(s.grid_charge_kwh for s in plan.slots if s.start.astimezone(TZ).day == 7)
+    assert tomorrow_kwh > 10 and today_kwh < 3
