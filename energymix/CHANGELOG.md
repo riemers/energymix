@@ -5,7 +5,8 @@
   Voorzichtig (standaard, zoals het was) of "Zoals de afgelopen week". Met de tweede rekent hij wat er
   na de bekende prijzen nog in de accu zit tegen de mediaanprijs van de afgelopen 7 dagen (na verlies).
   Na een windige, goedkope periode laadt hij de accu dan vol, in de verwachting dat het daarna weer
-  duurder wordt
+  duurder wordt. Dit gebeurt pas als de prijzen van morgen bekend zijn (na ±13:00): dan kiest hij of
+  hij vandaag of morgen vol laadt, en laadt hij vandaag alleen wat nodig is als morgen goedkoper is
 
 ## 0.2.27
 - Laden van het net wordt per kWh afgewogen in plaats van per heel kwartier of uur. Vaak loont alleen de
