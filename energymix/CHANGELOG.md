@@ -1,6 +1,6 @@
 # Changelog
 
-## Nog niet uitgebracht
+## 0.2.25
 - Statistiek: gemeten rendement van de accu heen en terug (wisselstroom erin, wisselstroom eruit), per
   dag als klein grafiekje onderaan, met de ingestelde waarde als stippellijn. Energymix leest daarvoor
   de energietellers van de Multi's via MQTT (of hun AC-vermogen als die tellers er niet zijn) en
