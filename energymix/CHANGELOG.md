@@ -1,6 +1,6 @@
 # Changelog
 
-## Nog niet uitgebracht
+## 0.2.32
 - Marge boven het ESS-minimum (Instellingen → Accu, standaard 10%). Zakt de verwachte accustand in de
   dure uren van de komende 24 uur onder minimum + marge (bij 5% minimum dus 15%), dan laadt Energymix
   vooraf in de goedkoopste uren zoveel bij dat die buffer er is, ook als dat volgens de prijzen net niet
