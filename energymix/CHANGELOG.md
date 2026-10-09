@@ -1,5 +1,13 @@
 # Changelog
 
+## Nog niet uitgebracht
+- Nieuwe instelling onder Net: "Telt die sensor de auto mee?". Kies je een huisverbruik-sensor die ook
+  de auto bevat (zoals een netto-verbruiksensor), zet dit op Ja: Energymix trekt dan het Zappi-vermogen eraf
+- Verwacht huisverbruik: uren zonder genoeg metingen krijgen het gemiddelde van de gemeten uren in plaats
+  van de vaste 600 W (zodra minstens 6 uur gemeten is)
+- Statistiek → Seizoen en planning zegt nu of het huisverbruik geleerd is, en zo niet, waarom
+  (geen huiswaarde, of weggevallen omdat de auto laadde). Ook in het logboek
+
 ## 0.2.30
 - Planning-grafiek: rode stippellijn met het verwachte huisverbruik (zonder auto), op dezelfde kW-schaal
   als de zon. Zo zie je wat er van de zon overblijft voor de accu. De planner rekende hier al mee

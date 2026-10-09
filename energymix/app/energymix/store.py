@@ -112,17 +112,26 @@ class Store:
         return list(self.db.execute("SELECT * FROM samples WHERE ts >= ? ORDER BY ts", (since.astimezone(timezone.utc).isoformat(),)))
 
     def house_profile(self, tz, days: int = 14) -> dict[int, float]:
-        """Huisverbruik (W) per uur van de dag.
+        """Huisverbruik (W) per uur van de dag (zie house_profile_info)."""
+        return self.house_profile_info(tz, days)["profile"]
+
+    def house_profile_info(self, tz, days: int = 14) -> dict:
+        """Huisverbruik (W) per uur van de dag, plus hoeveel metingen meetelden.
 
         Robuust: metingen terwijl de auto laadt tellen niet mee (een verkeerd
         afgetrokken Zappi zou de nacht enorm opblazen), negatieve waarden worden 0,
-        en de hoogste 10% per uur (oven, waterkoker) valt weg.
+        en de hoogste 10% per uur (oven, waterkoker) valt weg. Uren zonder genoeg
+        metingen krijgen het gemiddelde van de gemeten uren, als er minstens 6 zijn.
         """
         by_hour: dict[int, list[float]] = {}
+        total = no_value = car = 0
         for r in self.samples(datetime.now(timezone.utc) - timedelta(days=days)):
+            total += 1
             if r["house_w"] is None:
+                no_value += 1
                 continue
             if (r["zappi_w"] or 0) > 500:
+                car += 1
                 continue
             h = datetime.fromisoformat(r["ts"]).astimezone(tz).hour
             by_hour.setdefault(h, []).append(max(0.0, r["house_w"]))
@@ -133,7 +142,15 @@ class Store:
             v.sort()
             keep = v[: max(1, int(len(v) * 0.9))]
             out[h] = sum(keep) / len(keep)
-        return out
+        measured = len(out)
+        if 6 <= measured < 24:
+            avg = sum(out.values()) / measured
+            out = {h: out.get(h, avg) for h in range(24)}
+        return {
+            "profile": out, "hours_measured": measured, "samples": total,
+            "skipped_no_value": no_value, "skipped_car": car,
+            "avg_w": round(sum(out.values()) / len(out)) if out else None,
+        }
 
     def today_totals(self, tz) -> dict:
         """kWh van vandaag (lokale tijd) uit de metingen per minuut."""

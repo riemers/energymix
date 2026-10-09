@@ -160,6 +160,7 @@ function FieldRow({ f, value, onChange }: { f: SettingField; value: string | num
           {f.kind.slice(7).split(",").map((o) => (
             <option key={o} value={o} className="bg-ink-900">
               {o === "total" ? "Totaalprijs (salderen)" : o === "energy" ? "Kale energieprijs"
+                : o === "excl" ? "Nee, alleen het huis" : o === "incl" ? "Ja, Energymix trekt de Zappi eraf"
                 : o === "measured" ? "Gemeten (uit laden en ontladen, anders het getal hierboven)" : o === "fixed" ? "Vast (het getal hierboven)"
                 : o === "careful" ? "Voorzichtig (alleen bekende prijzen)" : o === "week" ? "Zoals de afgelopen week (eerder vol laden)" : o}
             </option>

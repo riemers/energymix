@@ -88,3 +88,18 @@ def test_learned_capacity_needs_big_swings(tmp_path):
     for m in range(120):
         st.add_sample(t + timedelta(minutes=m), soc=50 + m / 20, battery_w=1500)
     assert st.learned_capacity()["kwh"] is None
+
+
+def test_house_profile_fills_missing_hours_and_reports_skips(tmp_path):
+    st = Store(tmp_path / "db.sqlite")
+    base = datetime.now(TZ).replace(hour=0, minute=0, second=0, microsecond=0) - timedelta(days=1)
+    for h in range(8):
+        for m in range(15):
+            st.add_sample(base + timedelta(hours=h, minutes=m), house_w=1000 + 100 * h, zappi_w=0)
+    st.add_sample(base + timedelta(hours=9), house_w=9000, zappi_w=7000)
+    st.add_sample(base + timedelta(hours=10), house_w=None)
+    info = st.house_profile_info(TZ)
+    assert info["hours_measured"] == 8
+    assert len(info["profile"]) == 24
+    assert info["profile"][20] == info["avg_w"] == 1350
+    assert info["skipped_car"] == 1 and info["skipped_no_value"] == 1

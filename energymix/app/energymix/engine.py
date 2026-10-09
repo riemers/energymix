@@ -56,6 +56,7 @@ class Engine:
         self.master = True
         self.errors: list[str] = []
         self.stats_cache: tuple[float, dict] | None = None
+        self.house_info: dict = {}
         self._profile: tuple[float, dict[int, float]] | None = None
         self._helpers_checked = False
         self._wake = asyncio.Event()
@@ -163,6 +164,8 @@ class Engine:
         elif self.victron.pv_w() is not None:
             st.pv_w = self.victron.pv_w()
             self.sources["pv_w"] = "Victron PV-omvormer (Envoy niet beschikbaar)"
+        if st.house_w is not None and c.house_power_car == "incl" and st.zappi_w is not None:
+            st.house_w = max(0.0, st.house_w - st.zappi_w)
         if st.house_w is None and st.grid_w is not None:
             st.house_w = (st.pv_w or 0) + st.grid_w - (st.battery_w or 0) - (st.zappi_w or 0)
         return st
@@ -228,7 +231,14 @@ class Engine:
         st = self.state or State()
         pv = pv_per_slot(self.prices, now, self.tz, st.solar_remaining_kwh, st.solar_tomorrow_kwh, lat, lon, detailed)
         if self._profile is None or time.time() - self._profile[0] > 3600:
-            self._profile = (time.time(), self.store.house_profile(self.tz))
+            info = self.store.house_profile_info(self.tz)
+            self._profile = (time.time(), info["profile"])
+            self.house_info = {k: v for k, v in info.items() if k != "profile"}
+            if not info["profile"]:
+                log.warning(
+                    "Geen huisverbruik per uur te leren (%d metingen, %d zonder huiswaarde, %d terwijl de auto laadde): "
+                    "planner rekent met %d W", info["samples"], info["skipped_no_value"], info["skipped_car"],
+                    c.house_load_default_w)
         house = house_per_slot(self.prices, self.tz, self._profile[1], c.house_load_default_w)
         stats = self.battery_stats()
         return Forecast(pv, house, stats.get("learned_charge_w"))

@@ -71,6 +71,7 @@ schema:
   grid_power_entity: str?
   battery_power_entity: str?
   house_power_entity: str?
+  house_power_car: list(excl|incl)?
   zappi_power_entity: str?
   sunchance_entity: str?
   pv_switch_entity: str?

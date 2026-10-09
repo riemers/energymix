@@ -250,6 +250,10 @@ export interface Stats {
   to_target_hours?: number | null;
   samples: number;
   efficiency: { days: EfficiencyDay[]; overall: number | null };
+  house_profile?: {
+    hours_measured?: number; samples?: number; skipped_no_value?: number; skipped_car?: number;
+    avg_w?: number | null; default_w: number;
+  };
   capacity?: { kwh: number | null; runs: number; charge_kwh?: number | null; discharge_kwh?: number | null };
   roundtrip_setting: number;
 }

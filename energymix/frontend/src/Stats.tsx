@@ -34,6 +34,7 @@ export default function Stats({ stats, status }: { stats: StatsT | null; status:
         </Card>
         <Card title="Seizoen en planning">
           <PlanFacts plan={plan} tz={status.timezone} />
+          {stats.house_profile && <HouseProfileNote hp={stats.house_profile} />}
         </Card>
       </div>
 
@@ -230,5 +231,19 @@ function PlanFacts({ plan, tz }: { plan: Plan | null; tz: string }) {
         </div>
       ))}
     </dl>
+  );
+}
+
+function HouseProfileNote({ hp }: { hp: NonNullable<StatsT["house_profile"]> }) {
+  if (hp.hours_measured === undefined) return null;
+  const learned = hp.hours_measured >= 6;
+  return (
+    <p className={`mt-3 text-[11px] leading-snug ${learned ? "text-slate-500" : "text-amber-300/80"}`}>
+      {learned
+        ? `Huisverbruik geleerd uit ${hp.hours_measured} van de 24 uur (gemiddeld ${hp.avg_w} W, laatste 14 dagen, zonder auto).`
+        : `Huisverbruik nog niet geleerd: de planner rekent met vast ${hp.default_w} W. `
+          + `Van ${hp.samples} metingen hadden er ${hp.skipped_no_value} geen huiswaarde en ${hp.skipped_car} vielen weg omdat de auto laadde (Zappi boven 500 W). `
+          + `Stel onder Instellingen → Net de huisverbruik-sensor in als het berekenen niet lukt.`}
+    </p>
   );
 }
