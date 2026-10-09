@@ -51,8 +51,8 @@ EDITABLE = [
     ("eco_sunchance_min", "Ochtend-eco: zonkans minimaal (%)", "number", "Auto"),
     ("eco_morning_start_hour", "Ochtend-eco vanaf (uur)", "number", "Auto"),
     ("eco_morning_end_hour", "Ochtend-eco tot (uur)", "number", "Auto"),
-    ("arbitrage_min_spread", "Min. winst laden van net (€/kWh)", "number", "Strategie"),
-    ("export_min_spread", "Min. winst terugleveren (€/kWh)", "number", "Strategie"),
+    ("arbitrage_min_spread", "Min. winst laden van net voor eigen gebruik (€/kWh, bv. 0,03)", "number", "Strategie"),
+    ("export_min_spread", "Min. winst terugleveren/verkopen (€/kWh, bv. 0,15)", "number", "Strategie"),
     ("roundtrip_efficiency", "Rendement accu heen en terug", "number", "Strategie"),
 ]
 

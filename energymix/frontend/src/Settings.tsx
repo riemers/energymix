@@ -170,10 +170,31 @@ function FieldRow({ f, value, onChange }: { f: SettingField; value: string | num
           {f.fallback && <div className="mt-1 text-[11px] text-sky-300/80">✓ {f.fallback.label}</div>}
         </>
       ) : (
-        <input type="number" step="any" value={String(value)} onChange={(e) => onChange(Number(e.target.value))}
-          className="w-full rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm tabular-nums outline-none focus:border-emerald-400/50" />
+        <NumberInput value={value} onChange={onChange} />
       )}
     </div>
+  );
+}
+
+// Getal als tekst bewerken: met type="number" en Number() verdween de punt tijdens het typen
+// ("0." werd 0), en een komma (0,04) werkte niet. Nu mag allebei.
+function NumberInput({ value, onChange }: { value: string | number; onChange: (v: unknown) => void }) {
+  const [text, setText] = useState(String(value ?? ""));
+  useEffect(() => {
+    if (Number(text.replace(",", ".")) !== Number(value)) setText(String(value ?? ""));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [value]);
+  const parsed = Number(text.replace(",", "."));
+  const valid = text.trim() !== "" && Number.isFinite(parsed);
+  return (
+    <input type="text" inputMode="decimal" value={text}
+      onChange={(e) => {
+        setText(e.target.value);
+        const n = Number(e.target.value.replace(",", "."));
+        if (e.target.value.trim() !== "" && Number.isFinite(n)) onChange(n);
+      }}
+      className={`w-full rounded-lg border bg-white/5 px-3 py-2 text-sm tabular-nums outline-none focus:border-emerald-400/50 ${
+        valid ? "border-white/10" : "border-rose-400/60"}`} />
   );
 }
 
