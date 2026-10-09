@@ -56,6 +56,8 @@ class Victron:
             f"N/{p}/system/0/Dc/Battery/Power",
             f"N/{p}/system/0/Dc/Battery/Soc",
             f"N/{p}/system/0/ActiveBatteryService",
+            # ESS: tot waar mag de accu ontladen
+            f"N/{p}/settings/0/Settings/CGwacs/BatteryLife/MinimumSocLimit",
             f"N/{p}/system/0/Ac/PvOnGrid/+/Power",
             f"N/{p}/system/0/Ac/PvOnOutput/+/Power",
             f"N/{p}/vebus/{self.vebus}/Ac/NumberOfPhases",
@@ -103,6 +105,10 @@ class Victron:
         if source and source != "system":
             return self.get(f"{source}/Soc")
         return self.get("system/0/Dc/Battery/Soc")
+
+    def min_soc(self) -> float | None:
+        """Ingesteld ESS-minimum (%): daaronder ontlaadt de Victron niet voor het huis."""
+        return self.values.get("settings/0/Settings/CGwacs/BatteryLife/MinimumSocLimit", (None,))[0]
 
     def pv_w(self) -> float | None:
         vals = [self.get(f"system/0/Ac/{k}/L{i}/Power") for k in ("PvOnGrid", "PvOnOutput") for i in (1, 2, 3)]

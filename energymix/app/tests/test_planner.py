@@ -548,3 +548,12 @@ def test_week_end_value_waits_for_tomorrows_prices_and_picks_cheapest_day():
     today_kwh = sum(s.grid_charge_kwh for s in plan.slots if s.start.astimezone(TZ).day == 6)
     tomorrow_kwh = sum(s.grid_charge_kwh for s in plan.slots if s.start.astimezone(TZ).day == 7)
     assert tomorrow_kwh > 10 and today_kwh < 3
+
+
+def test_uses_victron_ess_minimum_as_floor():
+    prices = hourly(at(0), AUTUMN * 2)
+    plan = make_plan(cfg(house_load_default_w=600), prices, State(soc=8, min_soc=5), at(14))
+    assert min(s.soc for s in plan.slots) == 5.0
+    # Al onder het minimum: dat zegt hij ook zo
+    plan = make_plan(cfg(house_load_default_w=600, hold_enabled=True), prices, State(soc=8), at(14))
+    assert "nu al op of onder het minimum (8%, minimum 10%)" in plan.summary["empty_why"]

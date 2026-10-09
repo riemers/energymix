@@ -139,6 +139,7 @@ class Engine:
             st.battery_w = self.victron.battery_w()
             self.sources["battery_w"] = "Victron MQTT"
         # Accuniveau: de GX zelf gaat voor (dat is wat VRM/het display toont); HA-sensor als terugval
+        st.min_soc = self.victron.min_soc()
         v_soc = self.victron.soc(c.battery_soc_source)
         if v_soc is not None:
             ha_soc = st.soc

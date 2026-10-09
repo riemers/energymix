@@ -75,6 +75,7 @@ class CarState:
 @dataclass
 class State:
     soc: float | None = None
+    min_soc: float | None = None  # ESS-minimum van de Victron (%), anders cfg.battery_min_soc
     solar_today_kwh: float | None = None
     solar_remaining_kwh: float | None = None
     solar_tomorrow_kwh: float | None = None
@@ -349,7 +350,7 @@ def make_plan(
         summary["hold_windows"] = [
             {"start": b["start"], "end": b["end"]} for b in _battery_sessions(on_plans) if b["kind"] == "hold"
         ] if summary["hold_value_eur"] >= 0.01 else []
-        summary["runway"] = battery_runway(cfg, tz, now, plans, state.soc)
+        summary["runway"] = battery_runway(cfg, tz, now, plans, state.soc, floor_pct(cfg, state))
         if summary.get("hold_slots") and summary.get("empty_why"):
             notes.append(f"Accu bewaren: {summary['empty_why']}")
         if summary.get("grid_charge_skip"):
@@ -744,7 +745,13 @@ RUNWAY_DAYS = 7
 RUNWAY_CASES = {"expected": (1.0, 1.0), "early": (1.2, 0.7), "late": (0.85, 1.3)}
 
 
-def battery_runway(cfg, tz, now: datetime, plans: list[SlotPlan], soc: float) -> dict:
+def floor_pct(cfg, state: State) -> float:
+    """Tot waar ontlaadt de accu voor het huis: het ESS-minimum van de Victron, anders de instelling."""
+    v = state.min_soc if state.min_soc is not None else cfg.battery_min_soc
+    return max(0.0, min(100.0, v))
+
+
+def battery_runway(cfg, tz, now: datetime, plans: list[SlotPlan], soc: float, floor: float = 10.0) -> dict:
     """Wanneer is de accu leeg (ESS-minimum) als er geen auto laadt en Energymix niets stuurt?
 
     Alleen huis en zon: de zon laadt bij, het huis trekt eraf. Binnen de planning met de
@@ -757,7 +764,7 @@ def battery_runway(cfg, tz, now: datetime, plans: list[SlotPlan], soc: float) ->
     eff_c = cfg.charge_efficiency if 0 < cfg.charge_efficiency <= 1 else 0.93
     eff_rt = cfg.roundtrip_efficiency if 0 < cfg.roundtrip_efficiency <= 1 else 0.85
     eff_d = min(1.0, eff_rt / eff_c)
-    floor_e = cap * 0.10
+    floor_e = cap * floor / 100
 
     # Stappen: (start, uren, huis kW, zon kW); na de planning het laatst bekende patroon per uur
     steps = []
@@ -823,7 +830,7 @@ def _plan_battery(cfg, tz, now, slots, plans: list[SlotPlan], state: State, fc: 
     eff_c = cfg.charge_efficiency if 0 < cfg.charge_efficiency <= 1 else 0.93
     eff_rt = cfg.roundtrip_efficiency if 0 < cfg.roundtrip_efficiency <= 1 else 0.85
     eff_d = min(1.0, eff_rt / eff_c)
-    floor_e = cap * 0.10  # Victron ESS minimum, voor het huis
+    floor_e = cap * floor_pct(cfg, state) / 100  # Victron ESS-minimum, voor het huis
     reserve_e = cap * cfg.battery_reserve_soc / 100
     target_e = cap * cfg.battery_target_soc / 100
     e0 = cap * state.soc / 100
@@ -925,8 +932,11 @@ def _plan_battery(cfg, tz, now, slots, plans: list[SlotPlan], state: State, fc: 
     upto = empty_idx + 1 if empty_idx is not None else n
     why_empty = ""
     if empty_idx is not None:
+        when = (f"nu al op of onder het minimum ({state.soc:.0f}%, minimum {floor_e / cap * 100:.0f}%)"
+                if e0 <= floor_e + 0.05 else
+                f"om {_fmt(plans[empty_idx].start, tz, now)} op het minimum ({floor_e / cap * 100:.0f}%)")
         why_empty = (
-            f"; zonder bewaren is de accu om {_fmt(plans[empty_idx].start, tz, now)} op {floor_e / cap * 100:.0f}% "
+            f"; zonder bewaren is de accu {when} "
             f"(tot dan huis {sum(p.house_kwh for p in plans[:upto]):.0f} kWh"
             + (f", auto eco {sum(eco[:upto]):.0f} kWh" if sum(eco[:upto]) > 0.5 else "")
             + f", zon {sum(p.pv_kwh for p in plans[:upto]):.0f} kWh)"

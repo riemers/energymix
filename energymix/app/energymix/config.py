@@ -118,6 +118,7 @@ class Config:
     dvcc_step_a: int = 10
     battery_target_soc: float = 95
     battery_reserve_soc: float = 30
+    battery_min_soc: float = 10  # ESS-minimum als de Victron het niet doorgeeft
     house_load_default_w: float = 600
 
     # Prijzen en strategie
