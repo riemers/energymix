@@ -369,7 +369,7 @@ function Runway({ r, tz }: { r: NonNullable<Summary["runway"]>; tz: string }) {
     );
   }
   return (
-    <div className="border-t border-white/5 pt-2 text-xs text-slate-400" title="Alleen huis en zon, Energymix stuurt niets. Krap: 20% meer verbruik en 30% minder zon; ruim: 15% minder verbruik en 30% meer zon. Na de bekende prognose herhaalt hij het laatste dagpatroon. Leeg = het ESS-minimum dat in de Victron is ingesteld (anders 10%).">
+    <div className="border-t border-white/5 pt-2 text-xs text-slate-400" title="Alleen huis en zon, Energymix stuurt niets. Krap: 20% meer verbruik en 30% minder zon; ruim: 15% minder verbruik en 30% meer zon. Na de bekende prognose herhaalt hij het laatste dagpatroon. Leeg = het ESS-minimum dat in de Victron is ingesteld (anders 10%) plus de marge uit de instellingen.">
       {main}
     </div>
   );

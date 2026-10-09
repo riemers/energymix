@@ -121,6 +121,7 @@ class Config:
     battery_target_soc: float = 95
     battery_reserve_soc: float = 30
     battery_min_soc: float = 10  # ESS-minimum als de Victron het niet doorgeeft
+    battery_margin_pct: float = 10  # zoveel procent boven het ESS-minimum blijven (prognose kan tegenvallen)
     house_load_default_w: float = 600
 
     # Prijzen en strategie
