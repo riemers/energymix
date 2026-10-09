@@ -453,11 +453,13 @@ def _reserve_case(reserve):
                      prices, State(soc=80), at(15, 5, day=5), Forecast(pv_kwh=pv))
 
 
-def test_no_night_hold_for_small_gain_when_export_hits_reserve():
-    # Reserve 60%: terugleveren stopt op de reserve. 's Nachts bewaren om morgen iets
-    # meer terug te leveren levert te weinig op (onder export_min_spread): niet doen.
+def test_night_hold_for_export_at_reserve_counts_as_export():
+    # Reserve 60%: terugleveren stopt op de reserve. 's Nachts bewaren (huis €0,33 van het net)
+    # om morgen meer terug te leveren (€0,566) levert per kWh precies op wat het terugleveren
+    # zelf oplevert (€0,24, boven export_min_spread). Loont terugleveren, dan loont dit bewaren ook.
     plan = _reserve_case(60)
-    assert not [b for b in plan.battery_sessions if b["kind"] == "hold"]
+    holds = [b for b in plan.battery_sessions if b["kind"] == "hold"]
+    assert holds and all("meer terugleveren" in b["reason"] and "+€0,24/kWh" in b["reason"] for b in holds)
 
 
 def test_hold_for_export_is_labelled_as_export():
