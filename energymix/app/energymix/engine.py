@@ -469,7 +469,7 @@ class Engine:
                 rw.get("expected") or "unknown",
                 {"friendly_name": "Energymix accu leeg om (zonder auto)", "device_class": "timestamp",
                  "icon": "mdi:battery-clock", "krap": rw.get("early"), "ruim": rw.get("late"),
-                 "uitleg": "alleen huis en zon; krap = 20% meer verbruik en 30% minder zon; leeg = ESS-minimum + marge"},
+                 "uitleg": "alleen huis en zon; krap = 20% meer verbruik en 30% minder zon; leeg = ESS-minimum"},
             )
         if plan.car.full_at:
             sensors[f"sensor.{p}_auto_vol_om"] = (plan.car.full_at.isoformat(), {"friendly_name": "Energymix auto vol om", "device_class": "timestamp", "auto": plan.car.name})
@@ -515,7 +515,7 @@ class Engine:
         """Capaciteit en inhoud voor het accubolletje."""
         cap = self.cfg.battery_capacity_kwh
         measured = (self.battery_stats().get("capacity") or {})
-        floor = plan_floor_pct(self.cfg, st)
+        floor = floor_pct(self.cfg, st)
         return {
             "capacity_kwh": round(cap, 1),
             "capacity_source": "gemeten" if self.measured_capacity(self.base_cfg) else "ingesteld",
@@ -525,5 +525,5 @@ class Engine:
             "stored_kwh": round(cap * st.soc / 100, 1) if st.soc is not None else None,
             "usable_kwh": round(max(0.0, cap * (st.soc - floor) / 100), 1) if st.soc is not None else None,
             "floor_pct": floor,
-            "ess_min_pct": floor_pct(self.cfg, st),
+            "margin_floor_pct": plan_floor_pct(self.cfg, st),
         }

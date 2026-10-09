@@ -1,11 +1,11 @@
 # Changelog
 
 ## Nog niet uitgebracht
-- Marge boven het ESS-minimum (Instellingen → Accu, standaard 10%). De planner laat de accu niet verder
-  zakken dan minimum + marge (bij een Victron-minimum van 10% dus 20%). Komt de accu daar, dan bewaart
-  Energymix hem en komt het huis van het net, ook als de prognose (verbruik, zon) tegenviel. Zo blijft er
-  altijd een buffer over. 0 = uit, zoals het was
-- "Accu leeg om" en de uitleg rekenen met die ondergrens ("op de ondergrens (20%: minimum 10% + 10% marge)")
+- Marge boven het ESS-minimum (Instellingen → Accu, standaard 10%). Zakt de verwachte accustand in de
+  dure uren van de komende 24 uur onder minimum + marge (bij 5% minimum dus 15%), dan laadt Energymix
+  vooraf in de goedkoopste uren zoveel bij dat die buffer er is, ook als dat volgens de prijzen net niet
+  loont. In het echt mag de accu gewoon tot het ESS-minimum zakken: de buffer is voor als de prognose
+  tegenvalt (meer verbruik, minder zon). Werkt alleen met "Accu goedkoop van het net laden" aan; 0 = uit
 
 ## 0.2.31
 - Nieuwe instelling onder Net: "Telt die sensor de auto mee?". Kies je een huisverbruik-sensor die ook
