@@ -1,4 +1,4 @@
-import type { Plan, Stats as StatsT, Status } from "./types";
+import type { EfficiencyDay, Plan, Stats as StatsT, Status } from "./types";
 import { Card } from "./ui";
 import { eur, relDay, watt } from "./format";
 
@@ -36,6 +36,24 @@ export default function Stats({ stats, status }: { stats: StatsT | null; status:
           <PlanFacts plan={plan} tz={status.timezone} />
         </Card>
       </div>
+
+      <Card
+        title="Rendement accu heen en terug"
+        right={
+          <span className="text-[11px] text-slate-500">
+            {stats.efficiency.overall !== null ? `gemeten ${pct(stats.efficiency.overall)} · ` : ""}ingesteld {pct(stats.roundtrip_setting)}
+          </span>
+        }
+      >
+        {stats.efficiency.days.length ? (
+          <EfficiencyChart days={stats.efficiency.days} setting={stats.roundtrip_setting} />
+        ) : (
+          <p className="text-sm text-slate-500">
+            Nog geen hele dag gemeten. Energymix telt wat de Multi's aan wisselstroom opnemen en weer leveren; na een
+            dag waarop de accu flink geladen en ontladen is staat hier het eerste punt.
+          </p>
+        )}
+      </Card>
     </div>
   );
 }
@@ -125,6 +143,45 @@ function EnergyChart({ stats }: { stats: StatsT }) {
       <text x={0} y={11} className="fill-emerald-300/80 text-[11px]">▲ geladen</text>
       <text x={80} y={11} className="fill-sky-300/80 text-[11px]">▼ ontladen</text>
       <text x={W} y={11} textAnchor="end" className="fill-slate-500 text-[11px]">max {max.toFixed(0)} kWh/dag</text>
+    </svg>
+  );
+}
+
+const pct = (v: number) => `${Math.round(v * 100)}%`;
+
+function EfficiencyChart({ days, setting }: { days: EfficiencyDay[]; setting: number }) {
+  const W = 1000;
+  const H = 120;
+  const pad = 34;
+  const vals = [...days.map((d) => d.efficiency), setting];
+  const lo = Math.max(0.5, Math.floor((Math.min(...vals) - 0.02) * 50) / 50);
+  const hi = Math.min(1, Math.ceil((Math.max(...vals) + 0.02) * 50) / 50);
+  const y = (v: number) => 8 + ((hi - v) / (hi - lo)) * (H - 28);
+  const x = (i: number) => (days.length === 1 ? (pad + W) / 2 : pad + 26 + (i / (days.length - 1)) * (W - pad - 52));
+  const line = days.map((d, i) => `${i ? "L" : "M"}${x(i).toFixed(1)},${y(d.efficiency).toFixed(1)}`).join(" ");
+  const every = Math.max(1, Math.ceil(days.length / 10));
+  return (
+    <svg viewBox={`0 0 ${W} ${H}`} className="h-auto w-full">
+      {[lo, (lo + hi) / 2, hi].map((v) => (
+        <g key={v}>
+          <line x1={pad} x2={W} y1={y(v)} y2={y(v)} stroke="#1e293b" strokeDasharray="2 5" />
+          <text x={pad - 5} y={y(v) + 3} textAnchor="end" className="fill-slate-500 text-[10px]">{pct(v)}</text>
+        </g>
+      ))}
+      <line x1={pad} x2={W} y1={y(setting)} y2={y(setting)} stroke="#fbbf24" strokeOpacity={0.5} strokeDasharray="5 5" />
+      <path d={line} fill="none" stroke="#38bdf8" strokeWidth={2} strokeLinejoin="round" />
+      {days.map((d, i) => (
+        <g key={d.date}>
+          <circle cx={x(i)} cy={y(d.efficiency)} r={3.5} fill="#38bdf8">
+            <title>{`${new Date(d.date).toLocaleDateString("nl-NL", { day: "numeric", month: "short" })}: ${pct(d.efficiency)} (${d.in_kwh} kWh erin, ${d.out_kwh} kWh eruit)`}</title>
+          </circle>
+          {i % every === 0 && (
+            <text x={x(i)} y={H - 4} textAnchor="middle" className="fill-slate-500 text-[10px]">
+              {new Date(d.date).toLocaleDateString("nl-NL", { day: "numeric", month: "numeric" })}
+            </text>
+          )}
+        </g>
+      ))}
     </svg>
   );
 }

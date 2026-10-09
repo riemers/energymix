@@ -1,5 +1,11 @@
 # Changelog
 
+## Nog niet uitgebracht
+- Statistiek: gemeten rendement van de accu heen en terug (wisselstroom erin, wisselstroom eruit), per
+  dag als klein grafiekje onderaan, met de ingestelde waarde als stippellijn. Energymix leest daarvoor
+  de energietellers van de Multi's via MQTT (of hun AC-vermogen als die tellers er niet zijn) en
+  verrekent wat er netto in de accu bijkwam. Alleen dagen die bijna helemaal gemeten zijn en waarop
+  minstens 2 kWh geladen en ontladen is tellen mee. De planner blijft de ingestelde waarde gebruiken
 ## 0.2.23
 - Accu: laden én bewaren worden samen doorgerekend. 's Nachts goedkoop laden en de accu sparen tot de
   dure avondpiek, met alleen zoveel kWh als tot het eind van de bekende prijzen loont. Eerder probeerde
