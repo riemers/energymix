@@ -1,6 +1,6 @@
 # Changelog
 
-## Nog niet uitgebracht
+## 0.2.30
 - Planning-grafiek: rode stippellijn met het verwachte huisverbruik (zonder auto), op dezelfde kW-schaal
   als de zon. Zo zie je wat er van de zon overblijft voor de accu. De planner rekende hier al mee
   (gemiddelde per uur van de afgelopen 14 dagen), maar de grafiek liet het niet zien
