@@ -520,3 +520,16 @@ def test_without_hold_note_says_what_hold_would_save():
     plan = make_plan(cfg(house_load_default_w=600, arbitrage_min_spread=0.04), prices, State(soc=18), at(14))
     assert plan.summary["grid_charge_kwh"] == 0
     assert any('met "Accu bewaren" aan scheelt' in n for n in plan.notes)
+
+
+def test_week_end_value_fills_battery_after_cheap_windy_spell():
+    # Windig: de komende 36 uur allemaal rond €0,20. Vorige week kostte stroom normaal €0,30.
+    prices = hourly(at(0), [0.21, 0.20, 0.19, 0.19, 0.20, 0.21] * 8)
+    history = hourly(at(0) - timedelta(days=7), [0.30] * 24 * 7) + prices
+    base = cfg(house_load_default_w=500, arbitrage_min_spread=0.03)
+    careful = make_plan(base, prices, State(soc=15), at(1), history=history)
+    week = make_plan(cfg(house_load_default_w=500, arbitrage_min_spread=0.03, battery_end_value="week"),
+                     prices, State(soc=15), at(1), history=history)
+    assert careful.summary["grid_charge_kwh"] < 1
+    assert week.summary["grid_charge_kwh"] > 10
+    assert "afgelopen week" in week.summary["end_value_why"]

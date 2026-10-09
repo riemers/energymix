@@ -338,8 +338,11 @@ def make_plan(
         # Wat zou bewaren opleveren? Reken de andere keuze ook door, zodat de schakelaar
         # kan laten zien of het om €5 of om 45 cent gaat.
         alt_plans = copy.deepcopy(plans)
-        alt = _plan_battery(cfg, tz, now, slots, alt_plans, state, fc, season, car, allow_hold=not cfg.hold_enabled)
-        summary = _plan_battery(cfg, tz, now, slots, plans, state, fc, season, car, allow_hold=cfg.hold_enabled)
+        past = past_price_median(history or [], now)
+        alt = _plan_battery(cfg, tz, now, slots, alt_plans, state, fc, season, car, allow_hold=not cfg.hold_enabled,
+                            past_median=past)
+        summary = _plan_battery(cfg, tz, now, slots, plans, state, fc, season, car, allow_hold=cfg.hold_enabled,
+                                past_median=past)
         on, off = (summary, alt) if cfg.hold_enabled else (alt, summary)
         on_plans = plans if cfg.hold_enabled else alt_plans
         summary["hold_value_eur"] = round(max(0.0, on.get("saving_eur", 0) - off.get("saving_eur", 0)), 2)
@@ -806,8 +809,15 @@ class _Sim:
     terminal_e: float
 
 
+def past_price_median(history: list[PriceSlot], now: datetime, days: int = 7) -> float | None:
+    """Mediaan van de prijzen van de afgelopen dagen (wat stroom "normaal" kost)."""
+    since = now - timedelta(days=days)
+    past = sorted(s.price for s in history if since <= s.start < now)
+    return past[len(past) // 2] if len(past) >= 24 else None
+
+
 def _plan_battery(cfg, tz, now, slots, plans: list[SlotPlan], state: State, fc: Forecast, season, car: CarPlan,
-                  allow_hold: bool = True) -> dict:
+                  allow_hold: bool = True, past_median: float | None = None) -> dict:
     cap = cfg.battery_capacity_kwh
     eff_c = cfg.charge_efficiency if 0 < cfg.charge_efficiency <= 1 else 0.93
     eff_rt = cfg.roundtrip_efficiency if 0 < cfg.roundtrip_efficiency <= 1 else 0.85
@@ -840,6 +850,13 @@ def _plan_battery(cfg, tz, now, slots, plans: list[SlotPlan], state: State, fc: 
     # tot na de planning altijd winst en gaat hij 's nachts zonder reden bewaren.
     q = sorted(sp.price for sp in plans) or [0.2]
     terminal_value = q[len(q) // 4] * eff_d
+    # Op verzoek: wat na de bekende prijzen nog in de accu zit waarderen tegen wat stroom de
+    # afgelopen week normaal kostte. Na een windige (goedkope) periode laadt hij dan vol, in de
+    # verwachting dat het daarna weer duurder wordt.
+    terminal_why = "voorzichtig: goedkope prijs uit de planning"
+    if cfg.battery_end_value == "week" and past_median is not None and past_median * eff_d > terminal_value:
+        terminal_value = past_median * eff_d
+        terminal_why = f"mediaan afgelopen week €{past_median:.3f}, na verlies"
 
     # Ochtend-eco (door de autoplanning gekozen): accu/zon → auto
     eco = [sp.car_eco_kwh for sp in plans]
@@ -1240,6 +1257,8 @@ def _plan_battery(cfg, tz, now, slots, plans: list[SlotPlan], state: State, fc: 
             "empty_at": plans[empty_idx].start.isoformat() if empty_idx is not None else None,
             "empty_why": why_empty.lstrip("; "),
             "grid_charge_skip": skip_why,
+            "end_value_eur_kwh": round(terminal_value, 4),
+            "end_value_why": terminal_why,
             "house_kwh_24h": round(sum(p.house_kwh for p in plans if p.start < now + timedelta(hours=24)), 1),
             "pv_kwh_24h": round(sum(p.pv_kwh for p in plans if p.start < now + timedelta(hours=24)), 1),
         }
