@@ -350,7 +350,7 @@ def make_plan(
         summary["hold_windows"] = [
             {"start": b["start"], "end": b["end"]} for b in _battery_sessions(on_plans) if b["kind"] == "hold"
         ] if summary["hold_value_eur"] >= 0.01 else []
-        summary["runway"] = battery_runway(cfg, tz, now, plans, state.soc, floor_pct(cfg, state))
+        summary["runway"] = battery_runway(cfg, tz, now, plans, state.soc, plan_floor_pct(cfg, state))
         if summary.get("hold_slots") and summary.get("empty_why"):
             notes.append(f"Accu bewaren: {summary['empty_why']}")
         if summary.get("grid_charge_skip"):
@@ -751,6 +751,20 @@ def floor_pct(cfg, state: State) -> float:
     return max(0.0, min(100.0, v))
 
 
+def plan_floor_pct(cfg, state: State) -> float:
+    """Ondergrens waar de planner mee rekent: ESS-minimum plus de ingestelde marge.
+
+    De marge vangt op wat de prognose mist (meer verbruik, minder zon). Zakt de accu tot
+    deze grens, dan bewaart Energymix hem en komt het huis van het net.
+    """
+    return min(100.0, floor_pct(cfg, state) + max(0.0, cfg.battery_margin_pct))
+
+
+def floor_label(cfg, state: State) -> str:
+    lo, m = floor_pct(cfg, state), max(0.0, cfg.battery_margin_pct)
+    return f"{lo + m:.0f}%: minimum {lo:.0f}% + {m:.0f}% marge" if m > 0 else f"minimum {lo:.0f}%"
+
+
 def battery_runway(cfg, tz, now: datetime, plans: list[SlotPlan], soc: float, floor: float = 10.0) -> dict:
     """Wanneer is de accu leeg (ESS-minimum) als er geen auto laadt en Energymix niets stuurt?
 
@@ -830,7 +844,7 @@ def _plan_battery(cfg, tz, now, slots, plans: list[SlotPlan], state: State, fc: 
     eff_c = cfg.charge_efficiency if 0 < cfg.charge_efficiency <= 1 else 0.93
     eff_rt = cfg.roundtrip_efficiency if 0 < cfg.roundtrip_efficiency <= 1 else 0.85
     eff_d = min(1.0, eff_rt / eff_c)
-    floor_e = cap * floor_pct(cfg, state) / 100  # Victron ESS-minimum, voor het huis
+    floor_e = cap * plan_floor_pct(cfg, state) / 100  # ESS-minimum + marge, voor het huis
     reserve_e = cap * cfg.battery_reserve_soc / 100
     target_e = cap * cfg.battery_target_soc / 100
     e0 = cap * state.soc / 100
@@ -932,9 +946,9 @@ def _plan_battery(cfg, tz, now, slots, plans: list[SlotPlan], state: State, fc: 
     upto = empty_idx + 1 if empty_idx is not None else n
     why_empty = ""
     if empty_idx is not None:
-        when = (f"nu al op of onder het minimum ({state.soc:.0f}%, minimum {floor_e / cap * 100:.0f}%)"
+        when = (f"nu al op of onder de ondergrens ({state.soc:.0f}%; {floor_label(cfg, state)})"
                 if e0 <= floor_e + 0.05 else
-                f"om {_fmt(plans[empty_idx].start, tz, now)} op het minimum ({floor_e / cap * 100:.0f}%)")
+                f"om {_fmt(plans[empty_idx].start, tz, now)} op de ondergrens ({floor_label(cfg, state)})")
         why_empty = (
             f"; zonder bewaren is de accu {when} "
             f"(tot dan huis {sum(p.house_kwh for p in plans[:upto]):.0f} kWh"
@@ -1239,6 +1253,13 @@ def _plan_battery(cfg, tz, now, slots, plans: list[SlotPlan], state: State, fc: 
             sp.dvcc_current = 0
             sp.reasons["ess"] = hold_why.get(i, "accu bewaren voor later")
             sp.reasons["dvcc"] = "0 A: accu bewaren (niet van het net laden)"
+        elif (cfg.battery_margin_pct > 0 and cur.soc_e[i] <= floor_e + 0.05
+              and sp.house_kwh + eco[i] > max(0.0, sp.pv_kwh - sp.car_kwh) + EPS):
+            # Op de ondergrens (minimum + marge): niet verder ontladen, huis van het net
+            sp.ess_state = ESS_KEEP_CHARGED
+            sp.dvcc_current = 0
+            sp.reasons["ess"] = f"marge: accu blijft op {floor_e / cap * 100:.0f}% ({floor_label(cfg, state)}), huis van het net"
+            sp.reasons["dvcc"] = "0 A: accu niet verder ontladen"
         else:
             sp.ess_state = ESS_OPTIMIZED
             sp.dvcc_current = cfg.dvcc_max_charge_current

@@ -17,6 +17,7 @@ def cfg(**kw) -> Config:
         zappi_status_entity="sensor.zappi_status",
         cars=[Car("Auto A", 400, "b.cable", "d.loc", "s.range", kwh_per_km=0.2)],
         house_load_default_w=0,
+        battery_margin_pct=0,  # de marge heeft eigen tests
     )
     base.update(kw)
     return Config(**base)
@@ -556,4 +557,22 @@ def test_uses_victron_ess_minimum_as_floor():
     assert min(s.soc for s in plan.slots) == 5.0
     # Al onder het minimum: dat zegt hij ook zo
     plan = make_plan(cfg(house_load_default_w=600, hold_enabled=True), prices, State(soc=8), at(14))
-    assert "nu al op of onder het minimum (8%, minimum 10%)" in plan.summary["empty_why"]
+    assert "nu al op of onder de ondergrens (8%; minimum 10%)" in plan.summary["empty_why"]
+
+
+def test_margin_keeps_battery_above_ess_minimum():
+    # 20% en 's avonds verbruik: zonder marge zakt hij naar 10%, met 10% marge blijft hij op 20%
+    prices = hourly(at(0), AUTUMN * 2)
+    plan = make_plan(cfg(house_load_default_w=600, battery_margin_pct=10), prices, State(soc=30, min_soc=10), at(14))
+    assert min(s.soc for s in plan.slots) >= 19.9
+    held = [s for s in plan.slots if s.reasons.get("ess", "").startswith("marge")]
+    assert held and all(s.ess_state == ESS_KEEP_CHARGED and s.dvcc_current == 0 for s in held)
+    assert "20%: minimum 10% + 10% marge" in held[0].reasons["ess"]
+
+
+def test_margin_holds_when_already_below():
+    prices = hourly(at(0), AUTUMN * 2)
+    plan = make_plan(cfg(house_load_default_w=600, battery_margin_pct=10), prices, State(soc=8, min_soc=10), at(14))
+    first = plan.slots[0]
+    assert first.ess_state == ESS_KEEP_CHARGED and first.dvcc_current == 0
+    assert min(s.soc for s in plan.slots) == 8.0

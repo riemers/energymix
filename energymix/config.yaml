@@ -117,6 +117,7 @@ schema:
   grid_charge_enabled: bool?
   hold_enabled: bool?
   battery_end_value: list(careful|week)?
+  battery_margin_pct: float(0,50)?
   battery_capacity_mode: list(measured|fixed)?
   season_mode: list(auto|day|night)?
   car_min_range_km: int?

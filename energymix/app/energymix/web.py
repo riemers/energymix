@@ -23,6 +23,7 @@ EDITABLE = [
     ("battery_power_entity", "Accu vermogen (+ = laden)", "entity", "Accu"),
     ("battery_capacity_kwh", "Bruikbare capaciteit (kWh)", "number", "Accu"),
     ("battery_capacity_mode", "Capaciteit", "select:measured,fixed", "Accu"),
+    ("battery_margin_pct", "Marge boven het ESS-minimum (%, bv. 10)", "number", "Accu"),
     ("dvcc_max_charge_current", "DVCC max (A)", "number", "Accu"),
     ("dvcc_step_a", "DVCC stapgrootte (A)", "number", "Accu"),
     ("pv_power_entity", "Zonnepanelen vermogen", "entity", "Zon"),

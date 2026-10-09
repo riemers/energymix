@@ -1,5 +1,12 @@
 # Changelog
 
+## Nog niet uitgebracht
+- Marge boven het ESS-minimum (Instellingen → Accu, standaard 10%). De planner laat de accu niet verder
+  zakken dan minimum + marge (bij een Victron-minimum van 10% dus 20%). Komt de accu daar, dan bewaart
+  Energymix hem en komt het huis van het net, ook als de prognose (verbruik, zon) tegenviel. Zo blijft er
+  altijd een buffer over. 0 = uit, zoals het was
+- "Accu leeg om" en de uitleg rekenen met die ondergrens ("op de ondergrens (20%: minimum 10% + 10% marge)")
+
 ## 0.2.31
 - Nieuwe instelling onder Net: "Telt die sensor de auto mee?". Kies je een huisverbruik-sensor die ook
   de auto bevat (zoals een netto-verbruiksensor), zet dit op Ja: Energymix trekt dan het Zappi-vermogen eraf
