@@ -80,6 +80,11 @@ is er geen ochtend-eco. De drempels pas je aan onder Instellingen → Auto.
 huisverbruik per uur (dat leert hij zelf uit je metingen). Hij laadt alleen van het net als die
 energie later duurdere stroom vervangt, met minstens `arbitrage_min_spread` winst per kWh na
 verliezen. Vult de zon de accu toch al, dan laadt hij niet. Bij een negatieve prijs laadt hij altijd.
+Staat "Accu bewaren" aan, dan rekent hij ook laden én bewaren samen door: 's nachts goedkoop laden
+en de accu pas gebruiken bij de dure piek, met net zoveel kWh als tot het eind van de bekende prijzen
+loont (na ±13:00 dus tot en met morgen). In de herfst levert dat vaak 4 à 6 ct/kWh op, wat onder de
+standaard `arbitrage_min_spread` van 8 ct kan vallen; dan staat bij de planning hoeveel het zou
+opleveren en waarom hij niet laadt.
 
 **Terugleveren.** Alleen als de schakelaar aan staat, het verschil na verliezen minstens
 `export_min_spread` per kWh is, de auto niet laadt, en nooit onder de reserve.
