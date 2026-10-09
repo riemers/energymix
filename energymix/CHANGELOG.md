@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.2.26
+- Getallen in Instellingen kun je nu gewoon typen, ook met een komma (0,04). Eerder verdween de punt
+  tijdens het typen, waardoor je makkelijk 0,4 of 4 kreeg in plaats van 0,04
+- Standaard drempel voor laden van het net (eigen gebruik) van 8 naar 3 ct/kWh na verliezen. Terugleveren
+  (verkopen) houdt zijn eigen, hogere drempel. Een zelf ingestelde waarde blijft staan
+- Labels en uitleg zeggen duidelijker "voor eigen gebruik" en "terugleveren/verkopen"
+
+## 0.2.25
+- Statistiek: gemeten rendement van de accu heen en terug (wisselstroom erin, wisselstroom eruit), per
+  dag als klein grafiekje onderaan, met de ingestelde waarde als stippellijn. Energymix leest daarvoor
+  de energietellers van de Multi's via MQTT (of hun AC-vermogen als die tellers er niet zijn) en
+  verrekent wat er netto in de accu bijkwam. Alleen dagen die bijna helemaal gemeten zijn en waarop
+  minstens 2 kWh geladen en ontladen is tellen mee. De planner blijft de ingestelde waarde gebruiken
+
 ## 0.2.23
 - Accu: laden én bewaren worden samen doorgerekend. 's Nachts goedkoop laden en de accu sparen tot de
   dure avondpiek, met alleen zoveel kWh als tot het eind van de bekende prijzen loont. Eerder probeerde

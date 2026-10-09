@@ -491,9 +491,9 @@ AUTUMN = [0.23, 0.22, 0.215, 0.21, 0.215, 0.225, 0.26, 0.30, 0.31, 0.28, 0.26, 0
 def test_autumn_small_spread_explains_why_no_grid_charge():
     # Herfst: nacht €0,21, avondpiek €0,34. Na laadverlies een paar cent winst, onder de drempel
     prices = hourly(at(0), AUTUMN * 2)
-    plan = make_plan(cfg(house_load_default_w=600), prices, State(soc=18), at(14))
+    plan = make_plan(cfg(house_load_default_w=600, arbitrage_min_spread=0.08), prices, State(soc=18), at(14))
     assert plan.summary["grid_charge_kwh"] == 0
-    assert any("drempel €0,08/kWh: niet geladen" in n for n in plan.notes)
+    assert any("voor eigen gebruik, minder dan de drempel €0,08/kWh: niet geladen" in n for n in plan.notes)
 
 
 def test_autumn_charges_at_night_and_keeps_it_for_the_evening_peak():

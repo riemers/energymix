@@ -330,9 +330,11 @@ class Engine:
             self._last_sample = now
             st = self.state
             cur = slot_at(self.prices, datetime.now(timezone.utc))
+            ac_in, ac_out = self.victron.inverter_energy_kwh()
             self.store.add_sample(
                 datetime.now(timezone.utc), soc=st.soc, pv_w=st.pv_w, grid_w=st.grid_w,
                 battery_w=st.battery_w, house_w=st.house_w, zappi_w=st.zappi_w, price=cur.price if cur else None,
+                inverter_ac_w=self.victron.inverter_ac_w(), ac_to_inv_kwh=ac_in, inv_to_ac_kwh=ac_out,
             )
         if self.plan and self.plan.now:
             value, why = self.regulator.step(self.plan.now, self.state)

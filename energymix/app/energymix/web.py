@@ -51,8 +51,8 @@ EDITABLE = [
     ("eco_sunchance_min", "Ochtend-eco: zonkans minimaal (%)", "number", "Auto"),
     ("eco_morning_start_hour", "Ochtend-eco vanaf (uur)", "number", "Auto"),
     ("eco_morning_end_hour", "Ochtend-eco tot (uur)", "number", "Auto"),
-    ("arbitrage_min_spread", "Min. winst laden van net (€/kWh)", "number", "Strategie"),
-    ("export_min_spread", "Min. winst terugleveren (€/kWh)", "number", "Strategie"),
+    ("arbitrage_min_spread", "Min. winst laden van net voor eigen gebruik (€/kWh, bv. 0,03)", "number", "Strategie"),
+    ("export_min_spread", "Min. winst terugleveren/verkopen (€/kWh, bv. 0,15)", "number", "Strategie"),
     ("roundtrip_efficiency", "Rendement accu heen en terug", "number", "Strategie"),
 ]
 
@@ -140,6 +140,7 @@ def create_app(engine: Engine) -> web.Application:
         charge_w = s.get("learned_charge_w") or cfg.dvcc_max_charge_current * cfg.battery_nominal_voltage * cfg.charge_efficiency
         s["charge_w_used"] = round(charge_w)
         s["charge_w_source"] = "gemeten" if s.get("learned_charge_w") else "berekend uit DVCC max"
+        s["roundtrip_setting"] = cfg.roundtrip_efficiency
         if st and st.soc is not None:
             need = max(0.0, cfg.battery_target_soc - st.soc) / 100 * cfg.battery_capacity_kwh
             s["to_target_kwh"] = round(need, 1)
