@@ -1,5 +1,11 @@
 # Changelog
 
+## Nog niet uitgebracht
+- Planning-grafiek: rode stippellijn met het verwachte huisverbruik (zonder auto), op dezelfde kW-schaal
+  als de zon. Zo zie je wat er van de zon overblijft voor de accu. De planner rekende hier al mee
+  (gemiddelde per uur van de afgelopen 14 dagen), maar de grafiek liet het niet zien
+- Tooltip toont per tijdslot ook het huisverbruik en hoeveel zon er over is of tekortkomt
+
 ## 0.2.29
 - De planner gebruikt het ESS-minimum dat in de Victron is ingesteld (via MQTT) als ondergrens van de
   accu, in plaats van vast 10%. Stond de Victron lager, dan klopte de prognose "accu leeg om" niet
