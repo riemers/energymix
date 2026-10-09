@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.2.29
+- De planner gebruikt het ESS-minimum dat in de Victron is ingesteld (via MQTT) als ondergrens van de
+  accu, in plaats van vast 10%. Stond de Victron lager, dan klopte de prognose "accu leeg om" niet
+- Zit de accu al op of onder het minimum, dan zegt de uitleg dat ook ("nu al op of onder het minimum")
+- Instelling `battery_min_soc` (standaard 10%) voor als de Victron het minimum niet doorgeeft
+
 ## 0.2.28
 - Nieuwe keuze onder Instellingen → Strategie: "Accu-inhoud na de bekende prijzen waarderen".
   Voorzichtig (standaard, zoals het was) of "Zoals de afgelopen week". Met de tweede rekent hij wat er
