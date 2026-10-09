@@ -237,6 +237,15 @@ export interface Stats {
   to_target_kwh?: number;
   to_target_hours?: number | null;
   samples: number;
+  efficiency: { days: EfficiencyDay[]; overall: number | null };
+  roundtrip_setting: number;
+}
+
+export interface EfficiencyDay {
+  date: string;
+  efficiency: number;
+  in_kwh: number;
+  out_kwh: number;
 }
 
 export interface SettingField {
