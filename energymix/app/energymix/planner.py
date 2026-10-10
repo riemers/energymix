@@ -1255,7 +1255,11 @@ def _plan_battery(cfg, tz, now, slots, plans: list[SlotPlan], state: State, fc: 
                 # Wat er echt van het net bijkomt: met zon erbij is de laadstroom al deels bezet,
                 # dan past er maar een deel van de portie bij. Dat deel telt, niet de hele portie.
                 applied = sim.imp[k] - cur.imp[k]
-                if applied < 0.05 or sim.terminal_e - cur.terminal_e < 0.5 * applied * eff_c:
+                # Blijft het in de accu, of wordt het later bewust teruggeleverd? Dan nuttig. Drukt het
+                # alleen zonnestroom of later (goedkoper) laden weg, dan niet.
+                sold = sum(sim.exp[j] - cur.exp[j] for j in range(n) if ex[j] > EPS)
+                kept = sim.terminal_e - cur.terminal_e + max(0.0, sold) / eff_d
+                if applied < 0.05 or kept < 0.5 * applied * eff_c:
                     gc[k] -= d
                     todo.pop(0)
                     continue

@@ -638,3 +638,13 @@ def test_cheap_fill_tops_up_next_to_the_sun_per_quarter():
     c = cfg(house_load_default_w=300, dvcc_max_charge_current=80)
     plan = make_plan(c, prices, State(soc=35, solar_tomorrow_kwh=15), at(12, 52), fc=Forecast(pv_kwh=pv))
     assert plan.summary["cheap_fill_kwh"] > 5
+
+
+def test_cheap_fill_keeps_charging_when_export_is_planned_tonight():
+    # Terugleveren staat aan en vanavond is het duur: extra lading wordt deels teruggeleverd.
+    # Dat is geen reden om niet vol te laden (eerder viel daardoor alle bijladen af).
+    today = hourly(at(0), [0.25] * 10 + [0.12] * 8 + [0.40] * 3 + [0.28] * 3)
+    c = cfg(house_load_default_w=500, arbitrage_min_spread=0.03, export_enabled=True, export_min_spread=0.1)
+    plan = make_plan(c, today, State(soc=70, solar_tomorrow_kwh=4), at(10))
+    assert plan.summary["export_kwh"] > 0
+    assert plan.summary["cheap_fill_kwh"] > 8

@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.2.36
+- Goedkoop vol laden stopte als er vanavond terugleveren gepland stond: extra lading ging dan deels
+  naar het terugleveren en de regel zag dat als "loopt weg". Bewust terugleveren telt nu als nuttig;
+  alleen weglopende zonnestroom of later goedkoper laden houdt het bijladen tegen
+
 ## 0.2.35
 - Goedkoop vol laden stopte zodra de zon scheen: de zon bezet dan al een deel van de laadstroom, en
   een kwartier waarin maar een deel van het net bij paste viel helemaal af. Nu laadt hij van het net
