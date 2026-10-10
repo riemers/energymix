@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.2.33
+- Nieuwe instelling onder Strategie: "Onder deze prijs meteen vol laden als de zon het niet vult"
+  (standaard €0,15; 0 = uit). Is de stroom goedkoper dan dat, en blijft er volgens de zonprognose voor
+  morgen (min het huisverbruik overdag) te weinig zon over om de accu te vullen, dan laadt Energymix
+  meteen vol, ook vóór 13:00. Hij wacht niet meer op de prijzen van morgen. Na 13:00 kiest hij het
+  goedkoopste moment: is morgen goedkoper en zijn er genoeg goedkope uren om vol te laden, dan wacht
+  hij; anders laadt hij vandaag al bij. Zonder zonprognose geldt dit alleen in oktober t/m februari
+
 ## 0.2.32
 - Marge boven het ESS-minimum (Instellingen → Accu, standaard 10%). Zakt de verwachte accustand in de
   dure uren van de komende 24 uur onder minimum + marge (bij 5% minimum dus 15%), dan laadt Energymix

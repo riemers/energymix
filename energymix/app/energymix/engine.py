@@ -241,7 +241,7 @@ class Engine:
                     c.house_load_default_w)
         house = house_per_slot(self.prices, self.tz, self._profile[1], c.house_load_default_w)
         stats = self.battery_stats()
-        return Forecast(pv, house, stats.get("learned_charge_w"))
+        return Forecast(pv, house, stats.get("learned_charge_w"), dict(self._profile[1]))
 
     def battery_stats(self) -> dict:
         if self.stats_cache is None or time.time() - self.stats_cache[0] > 600:
