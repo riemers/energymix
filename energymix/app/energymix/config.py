@@ -133,6 +133,7 @@ class Config:
     energy_tax_eur: float = 0.11  # belasting+btw per kWh, als Tibber geen kale prijs geeft
     export_enabled: bool = False
     grid_charge_enabled: bool = True
+    cheap_fill_price: float = 0.15  # onder deze prijs meteen vol laden als de zon het niet vult (0 = uit)
     battery_end_value: str = "careful"  # careful | week: waarde van accu-inhoud na de bekende prijzen
     hold_enabled: bool = False  # accu bewaren (huis van net, accu sparen voor later)
     season_mode: str = "auto"  # auto | day | night

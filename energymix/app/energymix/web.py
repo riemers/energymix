@@ -57,6 +57,7 @@ EDITABLE = [
     ("arbitrage_min_spread", "Min. winst laden van net voor eigen gebruik (€/kWh, bv. 0,03)", "number", "Strategie"),
     ("export_min_spread", "Min. winst terugleveren/verkopen (€/kWh, bv. 0,15)", "number", "Strategie"),
     ("roundtrip_efficiency", "Rendement accu heen en terug", "number", "Strategie"),
+    ("cheap_fill_price", "Onder deze prijs meteen vol laden als de zon het niet vult (€/kWh, bv. 0,15; 0 = uit)", "number", "Strategie"),
     ("battery_end_value", "Accu-inhoud na de bekende prijzen waarderen", "select:careful,week", "Strategie"),
 ]
 

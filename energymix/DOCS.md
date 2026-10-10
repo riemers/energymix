@@ -93,6 +93,11 @@ dan rekent hij met de mediaanprijs van de afgelopen 7 dagen. Na een windige, goe
 dan vol en bewaart het voor als de wind gaat liggen. Dat doet hij pas als de prijzen van morgen bekend
 zijn (na ±13:00): is morgen goedkoper, dan laadt hij vandaag alleen wat nodig is en morgen vol.
 
+**Goedkoop meteen vol.** Is de prijs lager dan "Onder deze prijs meteen vol laden" (standaard €0,15)
+en vult de zon de accu de dag erna niet (zonprognose voor morgen min het huisverbruik overdag), dan
+laadt hij meteen tot het doel, ook vóór 13:00. Zijn de prijzen van morgen al bekend, dan laadt hij in de
+goedkoopste uren: morgen als dat goedkoper is en er genoeg uren zijn, anders vandaag. Op 0 staat het uit.
+
 **Terugleveren.** Alleen als de schakelaar aan staat, het verschil na verliezen minstens
 `export_min_spread` per kWh is, de auto niet laadt, en nooit onder de reserve.
 

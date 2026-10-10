@@ -578,3 +578,41 @@ def test_margin_charges_buffer_but_battery_may_go_lower():
     assert marg.summary["margin_charge_kwh"] > 0 and not marg.summary["grid_charge_skip"]
     # Geen "bewaren" op de marge: in het echt mag hij onder 15% komen
     assert not any(s.dvcc_current == 0 for s in marg.slots)
+
+
+def test_cheap_fill_before_tomorrows_prices_when_sun_is_weak():
+    # 10:00 in oktober, morgen nog onbekend; tot 20:00 €0,12, daarna €0,30. Weinig zon morgen.
+    today = hourly(at(0), [0.25] * 10 + [0.12] * 10 + [0.30] * 4)
+    c = cfg(house_load_default_w=500, arbitrage_min_spread=0.03, battery_target_soc=95)
+    plan = make_plan(c, today, State(soc=20, solar_tomorrow_kwh=4), at(10))
+    h = by_hour(plan)
+    assert max(s.soc for s in plan.slots) >= 94
+    assert sum(h[k].grid_charge_kwh for k in range(10, 20)) > 30
+    assert "dus nu vol" in h[10].reasons["ess"] or "dus nu vol" in h[11].reasons["ess"]
+    assert any("weinig zon verwacht" in n for n in plan.notes)
+    # Uit (0): oude gedrag, vóór 13:00 niet vol laden
+    off = make_plan(cfg(house_load_default_w=500, arbitrage_min_spread=0.03, cheap_fill_price=0),
+                    today, State(soc=20, solar_tomorrow_kwh=4), at(10))
+    assert off.summary["grid_charge_kwh"] < 10
+
+
+def test_cheap_fill_skips_when_sun_fills_battery_tomorrow():
+    today = hourly(at(0), [0.25] * 10 + [0.12] * 6 + [0.30] * 8)
+    c = cfg(house_load_default_w=500, arbitrage_min_spread=0.03)
+    plan = make_plan(c, today, State(soc=20, solar_tomorrow_kwh=60), at(10))
+    assert plan.summary["cheap_fill_kwh"] == 0
+
+
+def test_cheap_fill_waits_for_cheaper_tomorrow_with_enough_hours():
+    # 14:00: vandaag nog €0,13, morgen 6 uur €0,05: dan morgen vol, vandaag niet
+    both = hourly(at(0), [0.13] * 24 + [0.25] * 2 + [0.05] * 6 + [0.30] * 16)
+    c = cfg(house_load_default_w=500, arbitrage_min_spread=0.03)
+    plan = make_plan(c, both, State(soc=60, solar_tomorrow_kwh=4), at(14))
+    today_kwh = sum(s.grid_charge_kwh for s in plan.slots if s.start.astimezone(TZ).day == 6)
+    tomorrow_kwh = sum(s.grid_charge_kwh for s in plan.slots if s.start.astimezone(TZ).day == 7)
+    assert tomorrow_kwh > 15 and today_kwh < 3
+    # Morgen maar één goedkoop uur: dat is te kort, dan vandaag al bijladen
+    short = hourly(at(0), [0.13] * 24 + [0.25] * 2 + [0.05] + [0.30] * 21)
+    plan = make_plan(c, short, State(soc=60, solar_tomorrow_kwh=4), at(14))
+    today_kwh = sum(s.grid_charge_kwh for s in plan.slots if s.start.astimezone(TZ).day == 6)
+    assert today_kwh > 10
