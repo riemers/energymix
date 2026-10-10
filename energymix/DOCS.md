@@ -95,7 +95,8 @@ zijn (na ±13:00): is morgen goedkoper, dan laadt hij vandaag alleen wat nodig i
 
 **Goedkoop meteen vol.** Is de prijs lager dan "Onder deze prijs meteen vol laden" (standaard €0,15)
 en vult de zon de accu de dag erna niet (zonprognose voor morgen min het huisverbruik overdag), dan
-laadt hij meteen tot het doel, ook vóór 13:00. Zijn de prijzen van morgen al bekend, dan laadt hij in de
+laadt hij meteen tot 100%, ook vóór 13:00. In oktober t/m februari kijkt hij niet naar de zon: dan
+altijd vol. Zijn de prijzen van morgen al bekend, dan laadt hij in de
 goedkoopste uren: morgen als dat goedkoper is en er genoeg uren zijn, anders vandaag. Op 0 staat het uit.
 
 **Terugleveren.** Alleen als de schakelaar aan staat, het verschil na verliezen minstens

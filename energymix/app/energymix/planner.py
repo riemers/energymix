@@ -389,6 +389,7 @@ MIN_EXPORT_KWH = 0.5  # minder terugleveren in een slot is de moeite niet
 HOLD_MIN_MINUTES = 60  # bewaren altijd in blokken van minstens een uur, geen losse kwartiertjes
 HOLD_STICKY_EUR = 0.03
 CHARGE_STEP_KWH = 1.0
+WEAK_SUN_MONTHS = (10, 11, 12, 1, 2)
 WEEK_VALUE_MIN_HOURS = 18  # "zoals de afgelopen week" pas als de prijzen van morgen bekend zijn  # laden van het net per portie afwegen  # liever een bewaar-blok verlengen dan een los blok erbij
 
 
@@ -845,12 +846,15 @@ def past_price_median(history: list[PriceSlot], now: datetime, days: int = 7) ->
 def next_day_solar_surplus(cfg, state: State, fc: Forecast, plan_end: datetime, tz) -> float | None:
     """Hoeveel zon (kWh) blijft er de dag na de planning over voor de accu, na het huisverbruik overdag?
 
-    Prognose voor morgen als die er is (anders die van vandaag als schatting). Zonder prognose
-    alleen in de donkere maanden (okt-feb) uitgaan van niets over; anders weten we het niet (None).
+    In de zwakke zonmaanden (okt-feb) niets: dan valt de prognose vaak tegen en loont wachten op
+    de zon niet. Anders de prognose voor morgen (of die van vandaag als schatting); zonder
+    prognose weten we het niet (None).
     """
+    if plan_end.astimezone(tz).month in WEAK_SUN_MONTHS:
+        return 0.0
     solar = state.solar_tomorrow_kwh if state.solar_tomorrow_kwh is not None else state.solar_today_kwh
     if solar is None:
-        return 0.0 if plan_end.astimezone(tz).month in (10, 11, 12, 1, 2) else None
+        return None
     prof = fc.house_profile_w or {}
     house_day = sum(prof.get(h, cfg.house_load_default_w) for h in range(9, 17)) / 1000
     return max(0.0, solar - house_day)
@@ -1230,7 +1234,10 @@ def _plan_battery(cfg, tz, now, slots, plans: list[SlotPlan], state: State, fc: 
     if cfg.grid_charge_enabled and cfg.cheap_fill_price > 0 and cheap_fill and cap:
         surplus = next_day_solar_surplus(cfg, state, fc, plans[-1].end, tz)
         if surplus is not None:
-            goal_e = target_e - surplus * eff_c
+            # Zo goedkoop: helemaal vol (100%), niet alleen tot het gewone laaddoel
+            goal_e = cap - surplus * eff_c
+            for k in cheap_fill:
+                max_e[k] = cap
             # Per portie, en alleen houden wat echt in de accu blijft: een portie die later
             # alleen zonnestroom wegdrukt (accu al vol als de zon komt) laat hij weg.
             todo = list(cheap_fill)
@@ -1253,11 +1260,12 @@ def _plan_battery(cfg, tz, now, slots, plans: list[SlotPlan], state: State, fc: 
                 fill_kwh += d
                 charge_why[k] = (
                     f"laden à €{plans[k].price:.3f}: onder €{cfg.cheap_fill_price:.2f} en de zon vult de accu "
-                    f"niet (verwacht {surplus:.0f} kWh zon over), dus nu vol"
+                    f"niet{f' (verwacht {surplus:.0f} kWh zon over)' if surplus > 0.5 else ''}, dus nu vol"
                 )
             if fill_kwh > EPS:
-                fill_note = (f"prijs onder €{cfg.cheap_fill_price:.2f} en weinig zon verwacht "
-                             f"({surplus:.0f} kWh over): {fill_kwh:.0f} kWh extra geladen")
+                fill_note = (f"prijs onder €{cfg.cheap_fill_price:.2f} en weinig zon verwacht"
+                             + (f" ({surplus:.0f} kWh over)" if surplus > 0.5 else "")
+                             + f": {fill_kwh:.0f} kWh extra geladen, naar {cur.soc_e and max(cur.soc_e) / cap * 100:.0f}%")
 
     # Niet van het net geladen? Zeg dan wat het beste laadmoment zou opleveren tegenover de
     # drempel, anders lijkt het in de herfst (kleine verschillen dag/nacht) alsof hij niets doet.

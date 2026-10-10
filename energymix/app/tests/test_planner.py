@@ -597,10 +597,19 @@ def test_cheap_fill_before_tomorrows_prices_when_sun_is_weak():
 
 
 def test_cheap_fill_skips_when_sun_fills_battery_tomorrow():
-    today = hourly(at(0), [0.25] * 10 + [0.12] * 6 + [0.30] * 8)
+    # Juni: morgen genoeg zon om de accu te vullen, dan niet van het net vol laden
+    june = datetime(2026, 6, 6, tzinfo=TZ)
+    today = hourly(june, [0.25] * 10 + [0.12] * 6 + [0.30] * 8)
     c = cfg(house_load_default_w=500, arbitrage_min_spread=0.03)
-    plan = make_plan(c, today, State(soc=20, solar_tomorrow_kwh=60), at(10))
+    plan = make_plan(c, today, State(soc=20, solar_tomorrow_kwh=60), june + timedelta(hours=10))
     assert plan.summary["cheap_fill_kwh"] == 0
+
+
+def test_cheap_fill_goes_to_100_in_october_even_with_sunny_forecast():
+    today = hourly(at(0), [0.25] * 10 + [0.12] * 12 + [0.30] * 2)
+    c = cfg(house_load_default_w=500, arbitrage_min_spread=0.03, battery_target_soc=95)
+    plan = make_plan(c, today, State(soc=30, solar_tomorrow_kwh=25), at(10))
+    assert max(s.soc for s in plan.slots) >= 99
 
 
 def test_cheap_fill_waits_for_cheaper_tomorrow_with_enough_hours():
