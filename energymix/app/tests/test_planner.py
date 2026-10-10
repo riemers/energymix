@@ -625,3 +625,16 @@ def test_cheap_fill_waits_for_cheaper_tomorrow_with_enough_hours():
     plan = make_plan(c, short, State(soc=60, solar_tomorrow_kwh=4), at(14))
     today_kwh = sum(s.grid_charge_kwh for s in plan.slots if s.start.astimezone(TZ).day == 6)
     assert today_kwh > 10
+
+
+def test_cheap_fill_tops_up_next_to_the_sun_per_quarter():
+    # Kwartierprijzen, de zon vult de laadstroom al voor een groot deel: wat er nog bij past van
+    # het net moet hij wel laden (eerder viel de hele portie af omdat maar een deel paste).
+    from energymix.planner import Forecast
+    from energymix.prices import build_slots
+    hp = [0.20] * 12 + [0.13] * 4 + [0.30] * 8
+    prices = build_slots((at(0) + timedelta(minutes=15 * i), hp[i // 4], None) for i in range(96))
+    pv = {s.start: (0.6 if 12 <= s.start.astimezone(TZ).hour < 16 else 0.0) for s in prices}
+    c = cfg(house_load_default_w=300, dvcc_max_charge_current=80)
+    plan = make_plan(c, prices, State(soc=35, solar_tomorrow_kwh=15), at(12, 52), fc=Forecast(pv_kwh=pv))
+    assert plan.summary["cheap_fill_kwh"] > 5

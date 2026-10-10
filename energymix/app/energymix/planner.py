@@ -1252,12 +1252,16 @@ def _plan_battery(cfg, tz, now, slots, plans: list[SlotPlan], state: State, fc: 
                     continue
                 gc[k] += d
                 sim = simulate()
-                if sim.terminal_e - cur.terminal_e < 0.5 * d * eff_c:
+                # Wat er echt van het net bijkomt: met zon erbij is de laadstroom al deels bezet,
+                # dan past er maar een deel van de portie bij. Dat deel telt, niet de hele portie.
+                applied = sim.imp[k] - cur.imp[k]
+                if applied < 0.05 or sim.terminal_e - cur.terminal_e < 0.5 * applied * eff_c:
                     gc[k] -= d
                     todo.pop(0)
                     continue
+                gc[k] += applied - d
                 cur, cur_total = sim, total(sim)
-                fill_kwh += d
+                fill_kwh += applied
                 charge_why[k] = (
                     f"laden à €{plans[k].price:.3f}: onder €{cfg.cheap_fill_price:.2f} en de zon vult de accu "
                     f"niet{f' (verwacht {surplus:.0f} kWh zon over)' if surplus > 0.5 else ''}, dus nu vol"

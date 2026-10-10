@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.2.35
+- Goedkoop vol laden stopte zodra de zon scheen: de zon bezet dan al een deel van de laadstroom, en
+  een kwartier waarin maar een deel van het net bij paste viel helemaal af. Nu laadt hij van het net
+  bij wat er naast de zon nog in past
+
 ## 0.2.34
 - Goedkoop meteen vol laden gaat nu echt tot 100%, niet tot het gewone laaddoel
 - In oktober t/m februari telt de zonprognose voor morgen niet meer mee: dan laadt hij onder de
