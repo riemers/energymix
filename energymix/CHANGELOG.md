@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.2.34
+- Goedkoop meteen vol laden gaat nu echt tot 100%, niet tot het gewone laaddoel
+- In oktober t/m februari telt de zonprognose voor morgen niet meer mee: dan laadt hij onder de
+  drempel altijd helemaal vol. In de andere maanden laat hij nog ruimte voor de verwachte zon
+
 ## 0.2.33
 - Nieuwe instelling onder Strategie: "Onder deze prijs meteen vol laden als de zon het niet vult"
   (standaard €0,15; 0 = uit). Is de stroom goedkoper dan dat, en blijft er volgens de zonprognose voor
