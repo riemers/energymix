@@ -249,13 +249,24 @@ export interface Stats {
   to_target_kwh?: number;
   to_target_hours?: number | null;
   samples: number;
-  efficiency: { days: EfficiencyDay[]; overall: number | null };
+  efficiency: { days: EfficiencyDay[]; overall: number | null; checked?: EfficiencyCheck[] };
   house_profile?: {
     hours_measured?: number; samples?: number; skipped_no_value?: number; skipped_car?: number;
     avg_w?: number | null; default_w: number;
   };
   capacity?: { kwh: number | null; runs: number; charge_kwh?: number | null; discharge_kwh?: number | null };
   roundtrip_setting: number;
+}
+
+export interface EfficiencyCheck {
+  date: string;
+  source: string | null;
+  hours: number;
+  in_kwh: number;
+  out_kwh: number;
+  stored_kwh: number | null;
+  efficiency: number | null;
+  reason: string;
 }
 
 export interface EfficiencyDay {

@@ -223,9 +223,12 @@ class Store:
     def roundtrip_efficiency(self, tz, capacity_kwh: float, days: int = 60) -> dict:
         """Gemeten rendement heen en terug (AC naar AC) per dag en over de hele periode.
 
-        Per minuut wat de Multi's aan AC opnemen en leveren: uit hun energietellers als die er
-        zijn, anders uit het gemeten vermogen. Wat er netto in de accu bijkwam (SoC begin en
-        eind van de dag) wordt verrekend, zodat ook dagen zonder volle cyclus meetellen.
+        Per minuut wat de Multi's aan AC opnemen en leveren, op twee manieren: uit hun
+        energietellers en uit het gemeten AC-vermogen. De tellers zijn nauwkeuriger, maar
+        missen soms een pad of gaan na een herstart terug naar nul; geven ze geen geloofwaardig
+        rendement, dan telt het vermogen. Wat er netto in de accu bijkwam (SoC begin en eind
+        van de dag) wordt verrekend, zodat ook dagen zonder volle cyclus meetellen.
+        `checked` zegt per recente dag wat er gemeten is en waarom hij (niet) meetelt.
         """
         rows = self.samples(datetime.now(timezone.utc) - timedelta(days=days))
         per_day: dict[str, dict] = {}
@@ -233,7 +236,7 @@ class Store:
         for r in rows:
             t = datetime.fromisoformat(r["ts"])
             d = t.astimezone(tz).date().isoformat()
-            day = per_day.setdefault(d, {"in": 0.0, "out": 0.0, "hours": 0.0, "soc0": None, "soc1": None})
+            day = per_day.setdefault(d, {"c": [0.0, 0.0, 0.0], "p": [0.0, 0.0, 0.0], "soc0": None, "soc1": None})
             if r["soc"] is not None:
                 if day["soc0"] is None:
                     day["soc0"] = r["soc"]
@@ -242,40 +245,61 @@ class Store:
                 dt_h = (t - prev[0]).total_seconds() / 3600
                 if 0 < dt_h <= 15 / 60:
                     p = prev[1]
-                    d_in = d_out = None
                     if None not in (r["ac_to_inv_kwh"], r["inv_to_ac_kwh"], p["ac_to_inv_kwh"], p["inv_to_ac_kwh"]):
                         d_in = r["ac_to_inv_kwh"] - p["ac_to_inv_kwh"]
                         d_out = r["inv_to_ac_kwh"] - p["inv_to_ac_kwh"]
                         limit = 30 * dt_h  # meer dan 30 kW kan niet: teller gereset of verkeerd
-                        if not (0 <= d_in <= limit and 0 <= d_out <= limit):
-                            prev = (t, r)  # deze minuut overslaan
-                            continue
-                    elif r["inverter_ac_w"] is not None:
+                        if 0 <= d_in <= limit and 0 <= d_out <= limit:
+                            c = day["c"]
+                            c[0], c[1], c[2] = c[0] + d_in, c[1] + d_out, c[2] + dt_h
+                    if r["inverter_ac_w"] is not None:
                         kwh = r["inverter_ac_w"] * dt_h / 1000
-                        d_in, d_out = max(0.0, kwh), max(0.0, -kwh)
-                    if d_in is not None:
-                        day["in"] += d_in
-                        day["out"] += d_out
-                        day["hours"] += dt_h
+                        pw = day["p"]
+                        pw[0], pw[1], pw[2] = pw[0] + max(0.0, kwh), pw[1] + max(0.0, -kwh), pw[2] + dt_h
             prev = (t, r)
 
-        out_days = []
+        def judge(e_in: float, e_out: float, hours: float, stored: float | None) -> tuple[float | None, str]:
+            if hours < EFF_MIN_COVERAGE_H:
+                return None, f"maar {hours:.1f} uur gemeten"
+            if e_in < EFF_MIN_KWH or e_out < EFF_MIN_KWH:
+                return None, "te weinig geladen of ontladen"
+            if stored is None:
+                return None, "geen accustand"
+            eff = roundtrip_from(e_in, e_out, stored)
+            if eff is None:
+                s = (stored + (stored ** 2 + 4 * e_in * e_out) ** 0.5) / (2 * e_in)
+                return None, f"uitkomst {s * s:.0%} niet geloofwaardig"
+            return eff, ""
+
+        out_days, checked = [], []
         tot_in = tot_out = tot_stored = 0.0
         for d in sorted(per_day):
             x = per_day[d]
-            if x["hours"] < EFF_MIN_COVERAGE_H or x["in"] < EFF_MIN_KWH or x["out"] < EFF_MIN_KWH:
-                continue
-            if x["soc0"] is None or x["soc1"] is None:
-                continue
-            stored = capacity_kwh * (x["soc1"] - x["soc0"]) / 100
-            eff = roundtrip_from(x["in"], x["out"], stored)
+            stored = (capacity_kwh * (x["soc1"] - x["soc0"]) / 100) if x["soc0"] is not None and x["soc1"] is not None else None
+            eff, why, used = None, "geen AC-metingen van de Multi's", None
+            for src in ("c", "p"):
+                e_in, e_out, hours = x[src]
+                if hours <= 0:
+                    continue
+                eff, why = judge(e_in, e_out, hours, stored)
+                used = (src, e_in, e_out, hours)
+                if eff is not None:
+                    break
+            if used:
+                src, e_in, e_out, hours = used
+                checked.append({"date": d, "source": "tellers" if src == "c" else "vermogen", "hours": round(hours, 1),
+                                "in_kwh": round(e_in, 1), "out_kwh": round(e_out, 1),
+                                "stored_kwh": round(stored, 1) if stored is not None else None,
+                                "efficiency": round(eff, 3) if eff is not None else None, "reason": why})
+            else:
+                checked.append({"date": d, "source": None, "hours": 0, "in_kwh": 0, "out_kwh": 0,
+                                "stored_kwh": None, "efficiency": None, "reason": why})
             if eff is None:
                 continue
-            out_days.append({"date": d, "efficiency": round(eff, 3),
-                             "in_kwh": round(x["in"], 1), "out_kwh": round(x["out"], 1)})
-            tot_in, tot_out, tot_stored = tot_in + x["in"], tot_out + x["out"], tot_stored + stored
+            out_days.append({"date": d, "efficiency": round(eff, 3), "in_kwh": round(e_in, 1), "out_kwh": round(e_out, 1)})
+            tot_in, tot_out, tot_stored = tot_in + e_in, tot_out + e_out, tot_stored + stored
         overall = roundtrip_from(tot_in, tot_out, tot_stored) if out_days else None
-        return {"days": out_days, "overall": round(overall, 3) if overall else None}
+        return {"days": out_days, "overall": round(overall, 3) if overall else None, "checked": checked[-7:]}
 
     def learned_capacity(self, days: int = 30, min_swing: float = 20.0) -> dict:
         """Echte accucapaciteit uit metingen: hoeveel kWh er in of uit ging per procent SoC.
