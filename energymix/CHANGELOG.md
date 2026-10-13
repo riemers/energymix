@@ -1,6 +1,6 @@
 # Changelog
 
-## Nog niet uitgebracht
+## 0.2.37
 - Rendement accu heen en terug bleef leeg: de teller voor laden vanaf de AC-uitgang heet op de GX
   `OutToInverter`, niet `AcOutToInverter`. Zon die via de AC-uitgang de accu in ging telde zo niet mee,
   het rendement kwam boven 100% en elke dag werd afgekeurd. Nu de goede naam, en geven de tellers geen
