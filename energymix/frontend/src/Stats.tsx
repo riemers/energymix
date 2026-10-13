@@ -1,4 +1,4 @@
-import type { EfficiencyDay, Plan, Stats as StatsT, Status } from "./types";
+import type { EfficiencyCheck, EfficiencyDay, Plan, Stats as StatsT, Status } from "./types";
 import { Card } from "./ui";
 import { eur, relDay, watt } from "./format";
 
@@ -74,6 +74,7 @@ export default function Stats({ stats, status }: { stats: StatsT | null; status:
             dag waarop de accu flink geladen en ontladen is staat hier het eerste punt.
           </p>
         )}
+        {!!stats.efficiency.checked?.length && <EfficiencyChecks checks={stats.efficiency.checked} />}
       </Card>
     </div>
   );
@@ -169,6 +170,27 @@ function EnergyChart({ stats }: { stats: StatsT }) {
 }
 
 const pct = (v: number) => `${Math.round(v * 100)}%`;
+
+function EfficiencyChecks({ checks }: { checks: EfficiencyCheck[] }) {
+  return (
+    <details className="mt-2 text-[11px] text-slate-500">
+      <summary className="cursor-pointer select-none">Per dag gemeten</summary>
+      <table className="mt-1 w-full">
+        <tbody>
+          {checks.map((c) => (
+            <tr key={c.date} className="border-t border-white/5">
+              <td className="py-1 pr-2">{new Date(c.date).toLocaleDateString("nl-NL", { weekday: "short", day: "numeric", month: "numeric" })}</td>
+              <td className="pr-2">{c.source ? `${c.hours} u (${c.source})` : "–"}</td>
+              <td className="pr-2">{c.source ? `${c.in_kwh} kWh erin, ${c.out_kwh} eruit` : ""}</td>
+              <td className="pr-2">{c.stored_kwh !== null ? `accu ${c.stored_kwh > 0 ? "+" : ""}${c.stored_kwh} kWh` : ""}</td>
+              <td className="text-right">{c.efficiency !== null ? pct(c.efficiency) : c.reason}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </details>
+  );
+}
 
 function EfficiencyChart({ days, setting }: { days: EfficiencyDay[]; setting: number }) {
   const W = 1000;

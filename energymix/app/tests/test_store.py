@@ -60,7 +60,22 @@ def test_roundtrip_efficiency_needs_real_use(tmp_path):
     st = Store(tmp_path / "db.sqlite")
     day = datetime.now(TZ).replace(hour=0, minute=0, second=0, microsecond=0) - timedelta(days=2)
     _cycle_day(st, day, lambda m: 30, lambda m: 50.0)  # alleen eigenverbruik
-    assert st.roundtrip_efficiency(TZ, 47) == {"days": [], "overall": None}
+    eff = st.roundtrip_efficiency(TZ, 47)
+    assert eff["days"] == [] and eff["overall"] is None
+    assert eff["checked"][0]["reason"] == "te weinig geladen of ontladen"
+
+
+def test_roundtrip_efficiency_falls_back_to_power_when_counters_miss_a_path(tmp_path):
+    st = Store(tmp_path / "db.sqlite")
+    day = datetime.now(TZ).replace(hour=0, minute=0, second=0, microsecond=0) - timedelta(days=2)
+    stored = 24 * 0.93 - 16 / 0.9
+    # Tellers zien maar een derde van het laden (zon via de AC-uitgang telde niet mee): >100%
+    _cycle_day(st, day, lambda m: 3000 if m < 480 else (-2000 if m < 960 else 0),
+               lambda m: 40 + stored / 47 * 100 * m / 1439,
+               lambda m: (min(m, 480) * 1 / 60, max(0, min(m, 960) - 480) * 2 / 60))
+    eff = st.roundtrip_efficiency(TZ, 47)
+    assert 0.82 <= eff["days"][0]["efficiency"] <= 0.85
+    assert eff["checked"][-1]["source"] == "vermogen"
 
 
 def test_learned_capacity_from_charge_and_discharge(tmp_path):

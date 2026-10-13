@@ -155,7 +155,8 @@ class Victron:
             vals = [self.values[e + n][0] for n in names if e + n in self.values]
             return sum(vals) if vals else None
 
-        return (total(("AcIn1ToInverter", "AcIn2ToInverter", "AcOutToInverter")),
+        # De GX noemt laden vanaf de AC-uitgang (zon op de uitgang) "OutToInverter"
+        return (total(("AcIn1ToInverter", "AcIn2ToInverter", "OutToInverter")),
                 total(("InverterToAcIn1", "InverterToAcIn2", "InverterToAcOut")))
 
     async def run(self) -> None:

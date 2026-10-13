@@ -1,5 +1,13 @@
 # Changelog
 
+## Nog niet uitgebracht
+- Rendement accu heen en terug bleef leeg: de teller voor laden vanaf de AC-uitgang heet op de GX
+  `OutToInverter`, niet `AcOutToInverter`. Zon die via de AC-uitgang de accu in ging telde zo niet mee,
+  het rendement kwam boven 100% en elke dag werd afgekeurd. Nu de goede naam, en geven de tellers geen
+  geloofwaardige uitkomst dan rekent hij met het gemeten AC-vermogen. Daardoor verschijnen ook de
+  afgelopen dagen meteen
+- Onder het grafiekje staat per dag wat er gemeten is en waarom een dag (nog) niet meetelt
+
 ## 0.2.36
 - Goedkoop vol laden stopte als er vanavond terugleveren gepland stond: extra lading ging dan deels
   naar het terugleveren en de regel zag dat als "loopt weg". Bewust terugleveren telt nu als nuttig;

@@ -92,7 +92,7 @@ def test_inverter_ac_power_and_energy_counters():
     x.connected = True
     x.handle("N/abc123/vebus/276/Ac/ActiveIn/P", msg(4000), now=100)
     x.handle("N/abc123/vebus/276/Ac/Out/P", msg(1000), now=100)
-    for name, val in [("AcIn1ToInverter", 120.5), ("AcOutToInverter", 3.5), ("InverterToAcOut", 98.0),
+    for name, val in [("AcIn1ToInverter", 120.5), ("OutToInverter", 3.5), ("InverterToAcOut", 98.0),
                       ("AcIn1ToAcOut", 900.0)]:
         x.handle(f"N/abc123/vebus/276/Energy/{name}", msg(val), now=100)
     assert x.get("vebus/276/Ac/ActiveIn/P", now=110) - x.get("vebus/276/Ac/Out/P", now=110) == 3000
