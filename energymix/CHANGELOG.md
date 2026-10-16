@@ -1,5 +1,13 @@
 # Changelog
 
+## Nog niet uitgebracht
+- Rendement accu per cyclus: van een accustand weg (minstens 15 procentpunt) en terug op dezelfde stand,
+  ook over meerdere dagen. Dan hangt de uitkomst nauwelijks af van een kleine fout in de SoC, wat bij de
+  dagpunten wel zo is. Rechtsboven staat nu "per cyclus" naast "per dag"
+- Rendement per vermogen: per minuut het AC-vermogen van de Multi's tegen het DC-vermogen van de
+  accumonitor, per kW apart voor laden en ontladen. Daarbij het eigenverbruik van de Multi's (W en kWh per
+  dag), dat in het rendement heen en terug als verlies meetelt
+
 ## 0.2.37
 - Rendement accu heen en terug bleef leeg: de teller voor laden vanaf de AC-uitgang heet op de GX
   `OutToInverter`, niet `AcOutToInverter`. Zon die via de AC-uitgang de accu in ging telde zo niet mee,
