@@ -249,13 +249,40 @@ export interface Stats {
   to_target_kwh?: number;
   to_target_hours?: number | null;
   samples: number;
-  efficiency: { days: EfficiencyDay[]; overall: number | null; checked?: EfficiencyCheck[] };
+  efficiency: {
+    days: EfficiencyDay[];
+    overall: number | null;
+    checked?: EfficiencyCheck[];
+    cycles?: { list: EfficiencyCycle[]; count: number; overall: number | null };
+    power_curve?: { bins: PowerBin[]; standby_w: number | null; standby_samples: number };
+  };
   house_profile?: {
     hours_measured?: number; samples?: number; skipped_no_value?: number; skipped_car?: number;
     avg_w?: number | null; default_w: number;
   };
   capacity?: { kwh: number | null; runs: number; charge_kwh?: number | null; discharge_kwh?: number | null };
   roundtrip_setting: number;
+}
+
+export interface EfficiencyCycle {
+  start: string;
+  end: string;
+  soc: number;
+  soc_min: number;
+  soc_max: number;
+  efficiency: number;
+  in_kwh: number;
+  out_kwh: number;
+  source: string;
+}
+
+export interface PowerBin {
+  kw: number;
+  charge: number | null;
+  discharge: number | null;
+  roundtrip: number | null;
+  n_charge: number;
+  n_discharge: number;
 }
 
 export interface EfficiencyCheck {

@@ -118,3 +118,38 @@ def test_house_profile_fills_missing_hours_and_reports_skips(tmp_path):
     assert len(info["profile"]) == 24
     assert info["profile"][20] == info["avg_w"] == 1350
     assert info["skipped_car"] == 1 and info["skipped_no_value"] == 1
+
+
+def test_roundtrip_cycles_close_when_soc_returns(tmp_path):
+    from energymix.store import roundtrip_cycles
+
+    st = Store(tmp_path / "db.sqlite")
+    t0 = datetime.now(timezone.utc).replace(second=0, microsecond=0) - timedelta(days=3)
+    # 50% → 80% laden met 3 kW AC (0,93 erin), dan terug naar 50% leveren (0,9 eruit), over middernacht heen
+    soc, m = 50.0, 0
+    for phase, ac, dc in (("up", 3000, 2790), ("down", -2000, -2222)):
+        while (soc < 80 if phase == "up" else soc > 50):
+            st.add_sample(t0 + timedelta(minutes=m), soc=soc, inverter_ac_w=ac, battery_w=dc)
+            soc += dc / 60 / 1000 / 47 * 100
+            m += 1
+    st.add_sample(t0 + timedelta(minutes=m), soc=50.0, inverter_ac_w=0, battery_w=0)
+    cyc = roundtrip_cycles(st.samples(t0 - timedelta(minutes=1)), 47)
+    assert cyc["count"] == 1
+    c = cyc["list"][0]
+    assert c["soc_min"] == 50 and c["soc_max"] == 80
+    assert 0.82 <= c["efficiency"] <= 0.85
+
+
+def test_power_curve_per_kw_and_standby(tmp_path):
+    from energymix.store import power_curve
+
+    st = Store(tmp_path / "db.sqlite")
+    t0 = datetime.now(timezone.utc).replace(second=0, microsecond=0) - timedelta(days=1)
+    rows = [(3000, 2850)] * 30 + [(8000, 7200)] * 30 + [(-3000, -3200)] * 30 + [(60, -10)] * 30 + [(3000, 900)] * 3
+    for i, (ac, dc) in enumerate(rows):
+        st.add_sample(t0 + timedelta(minutes=i), soc=50, inverter_ac_w=ac, battery_w=dc)
+    pc = power_curve(st.samples(t0))
+    by = {b["kw"]: b for b in pc["bins"]}
+    assert by[3]["charge"] == 0.95 and by[8]["charge"] == 0.9  # uitschieter (900 W DC) telt niet
+    assert by[3]["discharge"] == round(3000 / 3200, 3) and by[3]["roundtrip"] is not None
+    assert pc["standby_w"] == 70

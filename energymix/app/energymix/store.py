@@ -47,6 +47,128 @@ def roundtrip_from(e_in: float, e_out: float, d_stored: float) -> float | None:
     return eff if 0.5 <= eff <= 1.0 else None  # daarbuiten klopt de meting niet
 
 
+# Een cyclus: de accu loopt minstens zoveel procentpunt weg en komt dan terug op dezelfde stand
+CYCLE_MIN_SWING = 15
+CYCLE_SOC_TOL = 0.5
+CYCLE_MAX_DAYS = 7
+
+
+def _interval_kwh(r, p, dt_h: float) -> tuple[tuple[float, float] | None, tuple[float, float] | None]:
+    """AC erin en eruit (kWh) tussen twee metingen: (uit de tellers, uit het vermogen)."""
+    c = None
+    if None not in (r["ac_to_inv_kwh"], r["inv_to_ac_kwh"], p["ac_to_inv_kwh"], p["inv_to_ac_kwh"]):
+        d_in, d_out = r["ac_to_inv_kwh"] - p["ac_to_inv_kwh"], r["inv_to_ac_kwh"] - p["inv_to_ac_kwh"]
+        if 0 <= d_in <= 30 * dt_h and 0 <= d_out <= 30 * dt_h:
+            c = (d_in, d_out)
+    w = None
+    if r["inverter_ac_w"] is not None:
+        kwh = r["inverter_ac_w"] * dt_h / 1000
+        w = (max(0.0, kwh), max(0.0, -kwh))
+    return c, w
+
+
+def roundtrip_cycles(rows, capacity_kwh: float, keep: int = 12) -> dict:
+    """Rendement per volledige cyclus: van een SoC weg (minstens CYCLE_MIN_SWING procentpunt) en
+    terug naar diezelfde SoC, ook over meerdere dagen. Dan is er netto niets opgeslagen en hangt
+    de uitkomst nauwelijks af van een SoC-fout. Een gat in de metingen begint opnieuw.
+    """
+    cycles = []
+    start = None  # (tijd, soc, [c_in, c_out, c_ok], [p_in, p_out, p_ok], soc_min, soc_max)
+    prev = None
+    for r in rows:
+        t = datetime.fromisoformat(r["ts"])
+        soc = r["soc"]
+        if soc is None:
+            prev = None
+            start = None
+            continue
+        if prev is not None and start is not None:
+            dt_h = (t - prev[0]).total_seconds() / 3600
+            if not 0 < dt_h <= 15 / 60 or t - start["t"] > timedelta(days=CYCLE_MAX_DAYS):
+                start = None
+            else:
+                c, w = _interval_kwh(r, prev[1], dt_h)
+                for key, v in (("c", c), ("p", w)):
+                    if v is None:
+                        start[key][2] = False
+                    else:
+                        start[key][0] += v[0]
+                        start[key][1] += v[1]
+                start["lo"], start["hi"] = min(start["lo"], soc), max(start["hi"], soc)
+                swing = max(start["soc"] - start["lo"], start["hi"] - start["soc"])
+                if swing >= CYCLE_MIN_SWING and abs(soc - start["soc"]) <= CYCLE_SOC_TOL:
+                    stored = capacity_kwh * (soc - start["soc"]) / 100
+                    best = None
+                    for key in ("c", "p"):
+                        e_in, e_out, ok = start[key]
+                        if ok and e_in >= EFF_MIN_KWH and e_out >= EFF_MIN_KWH:
+                            eff = roundtrip_from(e_in, e_out, stored)
+                            if eff is not None:
+                                best = (eff, e_in, e_out, "tellers" if key == "c" else "vermogen")
+                                break
+                    if best:
+                        cycles.append({"start": start["t"].isoformat(), "end": t.isoformat(),
+                                       "soc": round(start["soc"]), "soc_min": round(start["lo"]),
+                                       "soc_max": round(start["hi"]), "efficiency": round(best[0], 3),
+                                       "in_kwh": round(best[1], 1), "out_kwh": round(best[2], 1), "source": best[3]})
+                    start = None
+        if start is None:
+            start = {"t": t, "soc": soc, "lo": soc, "hi": soc, "c": [0.0, 0.0, True], "p": [0.0, 0.0, True]}
+        prev = (t, r)
+    tot_in = sum(c["in_kwh"] for c in cycles)
+    tot_out = sum(c["out_kwh"] for c in cycles)
+    overall = tot_out / tot_in if tot_in else None
+    return {"list": cycles[-keep:], "count": len(cycles), "overall": round(overall, 3) if overall else None}
+
+
+# Rendement per vermogen: per minuut AC (Multi's) tegen DC (accumonitor)
+CURVE_MIN_W = 500
+CURVE_MIN_SAMPLES = 20
+STANDBY_MAX_W = 100
+
+
+def power_curve(rows) -> dict:
+    """Laad- en ontlaadrendement per vermogensklasse (per kW AC) en het eigenverbruik.
+
+    Laden: DC naar de accu gedeeld door AC erin. Ontladen: AC eruit gedeeld door DC uit de accu.
+    Per klasse energiegewogen (som DC / som AC). Losse minuten met een onmogelijke verhouding
+    (vermogen net veranderd tussen twee metingen) tellen niet mee.
+    Eigenverbruik: wat de Multi's opnemen terwijl de accu (bijna) stilstaat.
+    """
+    bins: dict[int, dict] = {}
+    idle: list[float] = []
+    for r in rows:
+        ac, dc = r["inverter_ac_w"], r["battery_w"]
+        if ac is None or dc is None:
+            continue
+        if abs(dc) < STANDBY_MAX_W and abs(ac) < 2 * STANDBY_MAX_W:
+            idle.append(ac - dc)
+            continue
+        if abs(ac) < CURVE_MIN_W:
+            continue
+        kw = int(abs(ac) / 1000 + 0.5)
+        b = bins.setdefault(kw, {"c_ac": 0.0, "c_dc": 0.0, "n_c": 0, "d_ac": 0.0, "d_dc": 0.0, "n_d": 0})
+        if ac > 0 and dc > 0 and 0.6 <= dc / ac <= 1.0:
+            b["c_ac"] += ac
+            b["c_dc"] += dc
+            b["n_c"] += 1
+        elif ac < 0 and dc < 0 and 0.6 <= ac / dc <= 1.0:
+            b["d_ac"] -= ac
+            b["d_dc"] -= dc
+            b["n_d"] += 1
+    out = []
+    for kw in sorted(bins):
+        b = bins[kw]
+        ch = b["c_dc"] / b["c_ac"] if b["n_c"] >= CURVE_MIN_SAMPLES else None
+        dis = b["d_ac"] / b["d_dc"] if b["n_d"] >= CURVE_MIN_SAMPLES else None
+        if ch is None and dis is None:
+            continue
+        out.append({"kw": kw, "charge": round(ch, 3) if ch else None, "discharge": round(dis, 3) if dis else None,
+                    "roundtrip": round(ch * dis, 3) if ch and dis else None, "n_charge": b["n_c"], "n_discharge": b["n_d"]})
+    standby = median(idle) if len(idle) >= CURVE_MIN_SAMPLES else None
+    return {"bins": out, "standby_w": round(standby) if standby is not None else None, "standby_samples": len(idle)}
+
+
 class Store:
     def __init__(self, path: Path):
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -299,7 +421,8 @@ class Store:
             out_days.append({"date": d, "efficiency": round(eff, 3), "in_kwh": round(e_in, 1), "out_kwh": round(e_out, 1)})
             tot_in, tot_out, tot_stored = tot_in + e_in, tot_out + e_out, tot_stored + stored
         overall = roundtrip_from(tot_in, tot_out, tot_stored) if out_days else None
-        return {"days": out_days, "overall": round(overall, 3) if overall else None, "checked": checked[-7:]}
+        return {"days": out_days, "overall": round(overall, 3) if overall else None, "checked": checked[-7:],
+                "cycles": roundtrip_cycles(rows, capacity_kwh), "power_curve": power_curve(rows)}
 
     def learned_capacity(self, days: int = 30, min_swing: float = 20.0) -> dict:
         """Echte accucapaciteit uit metingen: hoeveel kWh er in of uit ging per procent SoC.
