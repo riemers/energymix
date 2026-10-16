@@ -1,4 +1,4 @@
-import type { EfficiencyCheck, EfficiencyDay, Plan, Stats as StatsT, Status } from "./types";
+import type { EfficiencyCheck, EfficiencyCycle, EfficiencyDay, PowerBin, Plan, Stats as StatsT, Status } from "./types";
 import { Card } from "./ui";
 import { eur, relDay, watt } from "./format";
 
@@ -62,7 +62,8 @@ export default function Stats({ stats, status }: { stats: StatsT | null; status:
         title="Rendement accu heen en terug"
         right={
           <span className="text-[11px] text-slate-500">
-            {stats.efficiency.overall !== null ? `gemeten ${pct(stats.efficiency.overall)} · ` : ""}ingesteld {pct(stats.roundtrip_setting)}
+            {stats.efficiency.cycles?.overall != null ? `per cyclus ${pct(stats.efficiency.cycles.overall)} · ` : ""}
+            {stats.efficiency.overall !== null ? `per dag ${pct(stats.efficiency.overall)} · ` : ""}ingesteld {pct(stats.roundtrip_setting)}
           </span>
         }
       >
@@ -74,6 +75,16 @@ export default function Stats({ stats, status }: { stats: StatsT | null; status:
             dag waarop de accu flink geladen en ontladen is staat hier het eerste punt.
           </p>
         )}
+        <div className="mt-4 grid gap-4 lg:grid-cols-2">
+          <div>
+            <div className="mb-1 text-xs text-slate-400">Per cyclus (terug op dezelfde accustand)</div>
+            <EfficiencyCycles cycles={stats.efficiency.cycles?.list ?? []} />
+          </div>
+          <div>
+            <div className="mb-1 text-xs text-slate-400">Per vermogen (AC tegen DC van de accumonitor)</div>
+            <PowerCurve curve={stats.efficiency.power_curve} />
+          </div>
+        </div>
         {!!stats.efficiency.checked?.length && <EfficiencyChecks checks={stats.efficiency.checked} />}
       </Card>
     </div>
@@ -170,6 +181,94 @@ function EnergyChart({ stats }: { stats: StatsT }) {
 }
 
 const pct = (v: number) => `${Math.round(v * 100)}%`;
+
+function EfficiencyCycles({ cycles }: { cycles: EfficiencyCycle[] }) {
+  if (!cycles.length)
+    return (
+      <p className="text-[11px] text-slate-500">
+        Nog geen cyclus rond. Een cyclus telt als de accu minstens 15 procentpunt wegloopt en weer op dezelfde stand
+        uitkomt, ook als dat een paar dagen duurt.
+      </p>
+    );
+  const fmt = (iso: string) =>
+    new Date(iso).toLocaleString("nl-NL", { weekday: "short", day: "numeric", month: "numeric", hour: "2-digit", minute: "2-digit" });
+  return (
+    <table className="w-full text-[11px] text-slate-400">
+      <tbody>
+        {[...cycles].reverse().map((c) => (
+          <tr key={c.start} className="border-t border-white/5">
+            <td className="py-1 pr-2">{fmt(c.start)} → {fmt(c.end)}</td>
+            <td className="pr-2">{c.soc_min}–{c.soc_max}%</td>
+            <td className="pr-2">{c.in_kwh} / {c.out_kwh} kWh</td>
+            <td className="text-right text-slate-200">{pct(c.efficiency)}</td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  );
+}
+
+function PowerCurve({ curve }: { curve?: { bins: PowerBin[]; standby_w: number | null } }) {
+  const bins = curve?.bins ?? [];
+  const standby = curve?.standby_w;
+  const note =
+    standby != null ? (
+      <p className="mt-1 text-[11px] text-slate-500">
+        Eigenverbruik van de Multi's: {standby} W, ≈{((standby * 24) / 1000).toFixed(1)} kWh per dag. Dat telt in het
+        rendement heen en terug mee als verlies.
+      </p>
+    ) : null;
+  if (!bins.length)
+    return (
+      <>
+        <p className="text-[11px] text-slate-500">Nog te weinig minuten met laden of ontladen per vermogen.</p>
+        {note}
+      </>
+    );
+  const W = 500;
+  const H = 150;
+  const pad = 34;
+  const maxKw = Math.max(...bins.map((b) => b.kw));
+  const vals = bins.flatMap((b) => [b.charge, b.discharge]).filter((v): v is number => v !== null);
+  const lo = Math.max(0.6, Math.floor((Math.min(...vals) - 0.02) * 50) / 50);
+  const hi = Math.min(1, Math.ceil((Math.max(...vals) + 0.01) * 50) / 50);
+  const x = (kw: number) => pad + 14 + ((kw - 1) / Math.max(1, maxKw - 1)) * (W - pad - 28);
+  const y = (v: number) => 8 + ((hi - v) / (hi - lo)) * (H - 30);
+  const series = (key: "charge" | "discharge", color: string) => {
+    const pts = bins.filter((b) => b[key] !== null);
+    return (
+      <g>
+        <path d={pts.map((b, i) => `${i ? "L" : "M"}${x(b.kw).toFixed(1)},${y(b[key]!).toFixed(1)}`).join(" ")}
+          fill="none" stroke={color} strokeWidth={2} />
+        {pts.map((b) => (
+          <circle key={b.kw} cx={x(b.kw)} cy={y(b[key]!)} r={3.5} fill={color}>
+            <title>{`${key === "charge" ? "Laden" : "Ontladen"} rond ${b.kw} kW: ${pct(b[key]!)} (${key === "charge" ? b.n_charge : b.n_discharge} min)${b.roundtrip ? `, heen en terug ${pct(b.roundtrip)}` : ""}`}</title>
+          </circle>
+        ))}
+      </g>
+    );
+  };
+  return (
+    <>
+      <svg viewBox={`0 0 ${W} ${H}`} className="h-auto w-full">
+        {[lo, (lo + hi) / 2, hi].map((v) => (
+          <g key={v}>
+            <line x1={pad} x2={W} y1={y(v)} y2={y(v)} stroke="#1e293b" strokeDasharray="2 5" />
+            <text x={pad - 5} y={y(v) + 3} textAnchor="end" className="fill-slate-500 text-[10px]">{pct(v)}</text>
+          </g>
+        ))}
+        {bins.map((b) => (
+          <text key={b.kw} x={x(b.kw)} y={H - 4} textAnchor="middle" className="fill-slate-500 text-[10px]">{b.kw} kW</text>
+        ))}
+        {series("charge", "#34d399")}
+        {series("discharge", "#38bdf8")}
+        <text x={W} y={11} textAnchor="end" className="fill-emerald-300/80 text-[11px]">● laden</text>
+        <text x={W - 60} y={11} textAnchor="end" className="fill-sky-300/80 text-[11px]">● ontladen</text>
+      </svg>
+      {note}
+    </>
+  );
+}
 
 function EfficiencyChecks({ checks }: { checks: EfficiencyCheck[] }) {
   return (

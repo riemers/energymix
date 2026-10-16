@@ -1,5 +1,13 @@
 # Changelog
 
+## Nog niet uitgebracht
+- Rendement accu per cyclus: van een accustand weg (minstens 15 procentpunt) en terug op dezelfde stand,
+  ook over meerdere dagen. Dan hangt de uitkomst nauwelijks af van een kleine fout in de SoC, wat bij de
+  dagpunten wel zo is. Rechtsboven staat nu "per cyclus" naast "per dag"
+- Rendement per vermogen: per minuut het AC-vermogen van de Multi's tegen het DC-vermogen van de
+  accumonitor, per kW apart voor laden en ontladen. Daarbij het eigenverbruik van de Multi's (W en kWh per
+  dag), dat in het rendement heen en terug als verlies meetelt
+
 ## 0.2.38
 - De marge boven het ESS-minimum is zacht: hij laadt er alleen voor bij als dat na verliezen goedkoper
   is dan het dure uur dat de marge beschermt. Zakt de accu in de dure avond onder de marge, dan laadt
