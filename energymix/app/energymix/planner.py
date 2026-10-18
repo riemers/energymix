@@ -1307,24 +1307,30 @@ def _plan_battery(cfg, tz, now, slots, plans: list[SlotPlan], state: State, fc: 
     # vooraf in de goedkoopste uren zoveel bijladen dat de buffer er is. Die energie is voor als
     # de prognose tegenvalt (meer verbruik, minder zon); in het echt mag de accu gewoon tot het
     # ESS-minimum zakken. In goedkope uren maakt een lage stand niet uit: het net is dan goedkoop.
+    # De marge is zacht: alleen bijladen als dat na verliezen goedkoper is dan het uur dat hij
+    # beschermt. Anders zakt de accu daar liever even onder de marge (niet onder het minimum) en
+    # laadt hij later goedkoper.
     margin_kwh = 0.0
     day_end = now + timedelta(hours=24)
     pricey = [k for k in range(1, n) if plans[k].start < day_end and plans[k].price > cheap_limit
               and plans[k].house_kwh > plans[k].pv_kwh + EPS]
     if cfg.grid_charge_enabled and margin_e > floor_e + EPS and pricey:
         for _ in range(8):
-            later = [(cur.soc_e[k], k) for k in pricey]
-            if not later:
+            # Laagste punt eerst; kan dat nergens goedkoper, dan het volgende
+            later = sorted((cur.soc_e[k], k) for k in pricey if margin_e - cur.soc_e[k] > 0.05)
+            pick = None
+            for low, m in later:
+                # Goedkoopste slots vóór dat punt, met laadruimte, die na verliezen goedkoper zijn
+                cands = sorted((k for k in range(m) if eco[k] <= EPS and gc[k] < step_charge[k] - EPS
+                                and plans[k].price / eff_rt < plans[m].price),
+                               key=lambda k: (plans[k].price, k))
+                if cands:
+                    pick = (low, m, cands)
+                    break
+            if pick is None:
                 break
-            low, m = min(later)
+            low, m, cands = pick
             short = margin_e - low
-            if short <= 0.05:
-                break
-            # Goedkoopste slots vóór het laagste punt, waar nog laadruimte is
-            cands = sorted((k for k in range(m) if eco[k] <= EPS and gc[k] < step_charge[k] - EPS),
-                           key=lambda k: (plans[k].price, k))
-            if not cands:
-                break
             need = short / eff_c
             added = 0.0
             for k in cands:

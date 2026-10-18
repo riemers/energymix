@@ -572,12 +572,28 @@ def test_margin_charges_buffer_but_battery_may_go_lower():
     marg = make_plan(cfg(**kw, battery_margin_pct=10), prices, st, at(14))
     charged = [s for s in marg.slots if s.grid_charge_kwh > 0]
     assert charged and all("marge" in s.reasons["ess"] for s in charged)
-    # In de dure avond van vandaag blijft er een buffer; zonder marge was hij daar leeg
-    evening = [s for s in marg.slots if s.start.astimezone(TZ).day == 6 and 17 <= s.start.astimezone(TZ).hour <= 21]
+    # In de dure avond van vandaag blijft er een buffer; zonder marge was hij daar leeg. Vanaf 20:00
+    # (€0,30) niet meer: bijladen à €0,26 kost na verliezen meer, dan mag hij onder de marge zakken.
+    evening = [s for s in marg.slots if s.start.astimezone(TZ).day == 6 and 17 <= s.start.astimezone(TZ).hour <= 19]
     assert min(s.soc for s in evening) >= 14.5
     assert marg.summary["margin_charge_kwh"] > 0 and not marg.summary["grid_charge_skip"]
     # Geen "bewaren" op de marge: in het echt mag hij onder 15% komen
     assert not any(s.dvcc_current == 0 for s in marg.slots)
+
+
+def test_margin_never_charges_in_expensive_evening_when_night_is_cheaper():
+    # 20:00, accu laag, avond duur (€0,45) en de nacht goedkoper (€0,33): niet nu voor de marge
+    # laden, maar de accu even onder de marge laten zakken en 's nachts bijladen.
+    p = ([0.45, 0.42, 0.40, 0.38] + [0.37, 0.35, 0.34, 0.33, 0.33, 0.33, 0.34, 0.38, 0.47, 0.48, 0.42, 0.38]
+         + [0.36, 0.33, 0.31, 0.32, 0.34, 0.44, 0.48, 0.42, 0.40, 0.38, 0.37, 0.35])
+    prices = hourly(at(20), p)
+    c = cfg(house_load_default_w=700, battery_margin_pct=10, hold_enabled=True)
+    plan = make_plan(c, prices, State(soc=13, min_soc=5), at(20))
+    evening = [s for s in plan.slots if s.start.astimezone(TZ).day == 6]
+    assert sum(s.grid_charge_kwh for s in evening) == 0
+    assert min(s.soc for s in evening) < 15 and min(s.soc for s in plan.slots) >= 5.0
+    night = [s for s in plan.slots if s.start.astimezone(TZ).day == 7 and s.start.astimezone(TZ).hour < 7]
+    assert any("marge" in s.reasons["ess"] and s.grid_charge_kwh > 0 for s in night)
 
 
 def test_cheap_fill_before_tomorrows_prices_when_sun_is_weak():

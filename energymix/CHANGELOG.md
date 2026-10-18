@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.2.38
+- De marge boven het ESS-minimum is zacht: hij laadt er alleen voor bij als dat na verliezen goedkoper
+  is dan het dure uur dat de marge beschermt. Zakt de accu in de dure avond onder de marge, dan laadt
+  hij niet meer duur bij maar later in de goedkopere nacht (onder het ESS-minimum komt hij nooit)
+- Standaard marge 5% in plaats van 10%
+
 ## 0.2.37
 - Rendement accu heen en terug bleef leeg: de teller voor laden vanaf de AC-uitgang heet op de GX
   `OutToInverter`, niet `AcOutToInverter`. Zon die via de AC-uitgang de accu in ging telde zo niet mee,
