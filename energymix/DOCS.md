@@ -110,6 +110,14 @@ voor vandaag en morgen erbij. Bewaren gaat altijd in blokken van minstens een uu
 aaneengesloten blok, zodat de Victron niet per kwartier wisselt. Staat de schakelaar uit, dan rekent
 hij toch uit wat het zou schelen: dat zie je bij de schakelaar en in `sensor.energymix_bewaren_waarde`.
 
+**Passthrough.** Is de accu vol in een goedkoop laadmoment, of staat hij op bewaren, dan haalt het huis
+zijn stroom direct van het net en blijft de accu staan. Zo gaat er geen stroom met verlies de accu uit om
+later weer met verlies te worden bijgeladen, en blijft de lading over voor een duurder uur. Bewaren loont
+al vanaf €0,02 per kWh verschil (laden van het net pas boven de ingestelde drempel), omdat er niets extra
+de accu in en uit gaat. Wat het scheelt staat onder Statistiek ("Passthrough: huis direct van het net")
+en in `sensor.energymix_passthrough_winst`. Valt het net weg, dan neemt de Multi het huis gewoon over uit
+de (volle) accu: passthrough zet alleen "keep batteries charged" aan, niets aan de omvormer zelf.
+
 **Laadstroom-regelaar (per fase).** Als de accu van het net laadt, kijkt een snelle regeling elke
 30 s **per fase** hoeveel ruimte er is:
 

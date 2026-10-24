@@ -388,6 +388,7 @@ ECO_KW = 3.7  # geschat laadvermogen op Eco (zon/accu)
 MIN_EXPORT_KWH = 0.5  # minder terugleveren in een slot is de moeite niet
 HOLD_MIN_MINUTES = 60  # bewaren altijd in blokken van minstens een uur, geen losse kwartiertjes
 HOLD_STICKY_EUR = 0.03
+PASSTHROUGH_MIN_EUR = 0.02  # bewaren (huis van het net, accu sparen) loont al vanaf 2 cent per kWh
 CHARGE_STEP_KWH = 1.0
 WEAK_SUN_MONTHS = (10, 11, 12, 1, 2)
 WEEK_VALUE_MIN_HOURS = 18  # "zoals de afgelopen week" pas als de prijzen van morgen bekend zijn  # laden van het net per portie afwegen  # liever een bewaar-blok verlengen dan een los blok erbij
@@ -834,6 +835,7 @@ class _Sim:
     imp: list[float]
     exp: list[float]
     terminal_e: float
+    gb: list[float] = field(default_factory=list)  # van het net de accu in
 
 
 def past_price_median(history: list[PriceSlot], now: datetime, days: int = 7) -> float | None:
@@ -918,7 +920,7 @@ def _plan_battery(cfg, tz, now, slots, plans: list[SlotPlan], state: State, fc: 
 
     def simulate() -> _Sim:
         e = e0
-        soc_e, cost, imp_l, exp_l = [], [], [], []
+        soc_e, cost, imp_l, exp_l, gb_l = [], [], [], [], []
         for i, sp in enumerate(plans):
             # Laadt de auto, dan pakt hij de zon eerst; de rest komt van het net
             # (feed-in dicht: de accu levert niet aan de auto). Pas wat daarna aan
@@ -947,6 +949,7 @@ def _plan_battery(cfg, tz, now, slots, plans: list[SlotPlan], state: State, fc: 
             g = min(gc[i], max(0.0, (max_e[i] - e) / eff_c), max(0.0, charge_cap[i] - used))
             e += g * eff_c
             imp += g
+            gb_l.append(g)
             x = min(ex[i], max(0.0, (e - reserve_e) * eff_d), export_cap[i])
             e -= x / eff_d
             exp += x
@@ -957,7 +960,7 @@ def _plan_battery(cfg, tz, now, slots, plans: list[SlotPlan], state: State, fc: 
             cost.append(c)
             imp_l.append(imp)
             exp_l.append(exp)
-        return _Sim(soc_e, cost, imp_l, exp_l, e)
+        return _Sim(soc_e, cost, imp_l, exp_l, e, gb_l)
 
     def total(sim: _Sim) -> float:
         return sum(sim.cost) - sim.terminal_e * terminal_value
@@ -1132,7 +1135,9 @@ def _plan_battery(cfg, tz, now, slots, plans: list[SlotPlan], state: State, fc: 
                     hold[k] for k in block
                 )
                 rank = per_kwh + (HOLD_STICKY_EUR if touches else 0.0)
-                threshold = cfg.arbitrage_min_spread
+                # Bewaren kost geen extra laadverlies (er gaat niets extra de accu in en uit), dus
+                # een kleinere drempel dan voor laden van het net
+                threshold = min(cfg.arbitrage_min_spread, PASSTHROUGH_MIN_EUR)
                 if via_export(sim, block, applied):
                     threshold = max(threshold, cfg.export_min_spread)
                 if per_kwh > threshold and (best is None or rank > best[0]):
@@ -1351,6 +1356,39 @@ def _plan_battery(cfg, tz, now, slots, plans: list[SlotPlan], state: State, fc: 
             if added <= EPS:
                 break
 
+    # Passthrough: het huis direct van het net terwijl de accu zijn lading houdt (bewaren, of de
+    # accu is vol in een laadkwartier). Wat levert dat op? Vergelijk met dezelfde planning waarin
+    # de accu in die kwartieren gewoon het huis voedt: dan moet die stroom later (met verlies)
+    # weer worden bijgeladen of mist hij in een duur uur.
+    through = [i for i in range(n) if (hold[i] or gc[i] > EPS) and cur.gb[i] < 0.05
+               and cur.imp[i] > EPS and plans[i].house_kwh > plans[i].pv_kwh + EPS]
+    passthrough: dict = {"value_eur": 0.0, "kwh": 0.0, "slots": []}
+    if through:
+        keep_gc, keep_hold = gc[:], hold[:]
+        for i in through:
+            gc[i], hold[i] = 0.0, False
+        alt_sim = simulate()
+        gc[:], hold[:] = keep_gc, keep_hold
+        value = max(0.0, total(alt_sim) - cur_total)
+        for i in through:
+            if gc[i] > EPS:
+                charge_why[i] = f"accu vol: huis direct van het net (€{plans[i].price:.3f}), accu sparen voor later"
+        # Wat is een kWh die zo in de accu blijft later waard? Het verschil tussen beide planningen
+        # plus wat het net nu kost, per kWh die het huis nu van het net haalt. Dat verdeelt de winst
+        # eerlijk over de kwartieren: winst = kWh × (waarde later − prijs nu).
+        grid_kwh = sum(cur.imp[i] for i in through)
+        grid_cost = sum(cur.imp[i] * plans[i].price for i in through)
+        later = (value + grid_cost) / grid_kwh if grid_kwh > EPS else 0.0
+        passthrough = {
+            "value_eur": round(value, 2),
+            "kwh": round(grid_kwh, 1),
+            "later_eur_kwh": round(later, 4),
+            "slots": [{"start": plans[i].start.isoformat(), "end": plans[i].end.isoformat(),
+                       "price": round(plans[i].price, 4), "kwh": round(cur.imp[i], 3),
+                       "gain_eur": round(cur.imp[i] * (later - plans[i].price), 3),
+                       "kind": "hold" if hold[i] else "full"} for i in through],
+        }
+
     # Vertalen naar instellingen
     v = cfg.battery_nominal_voltage
     for i, sp in enumerate(plans):
@@ -1412,6 +1450,7 @@ def _plan_battery(cfg, tz, now, slots, plans: list[SlotPlan], state: State, fc: 
             "margin_charge_kwh": round(margin_kwh, 1),
             "cheap_fill_kwh": round(fill_kwh, 1),
             "cheap_fill_why": fill_note,
+            "passthrough": passthrough,
             "end_value_eur_kwh": round(terminal_value, 4),
             "end_value_why": terminal_why,
             "house_kwh_24h": round(sum(p.house_kwh for p in plans if p.start < now + timedelta(hours=24)), 1),

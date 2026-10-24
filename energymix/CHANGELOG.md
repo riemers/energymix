@@ -1,5 +1,14 @@
 # Changelog
 
+## Nog niet uitgebracht
+- Passthrough: is de accu vol in een goedkoop laadmoment, dan staat er "accu vol: huis direct van het net"
+  en blijft de accu staan in plaats van te ontladen en later weer bij te laden. Onder Statistiek een
+  grafiek per uur met wat dat scheelt (en wat accustroom later waard is), plus
+  `sensor.energymix_passthrough_winst`. `sensor.energymix_accu_modus` zegt dan "Passthrough (huis van net)"
+  in plaats van "Laden van net"
+- Accu bewaren (huis van het net, accu sparen voor later) loont al vanaf €0,02/kWh: er gaat niets extra de
+  accu in en uit, dus de drempel voor laden van het net hoeft daar niet voor te gelden
+
 ## 0.2.40
 - Rendement accu: met de muis over een punt (of erop tikken) zie je de precieze waarde, in het daggrafiekje
   en in de grafiek per vermogen. De ingebouwde tooltips van de browser kwamen in Home Assistant niet door
