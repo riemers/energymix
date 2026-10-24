@@ -1,6 +1,6 @@
 # Changelog
 
-## Nog niet uitgebracht
+## 0.2.39
 - Rendement accu per cyclus: van een accustand weg (minstens 15 procentpunt) en terug op dezelfde stand,
   ook over meerdere dagen. Dan hangt de uitkomst nauwelijks af van een kleine fout in de SoC, wat bij de
   dagpunten wel zo is. Rechtsboven staat nu "per cyclus" naast "per dag"
