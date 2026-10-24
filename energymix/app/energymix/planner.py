@@ -1202,6 +1202,74 @@ def _plan_battery(cfg, tz, now, slots, plans: list[SlotPlan], state: State, fc: 
             export_why[i] = f"terugleveren à €{plans[i].sell_price:.3f}, {later}: +€{per_kwh:.2f}/kWh"
         cur, cur_total = sim, total(sim)
 
+    # Bewaren nog eens nalopen. De greedy kiest bewaren soms vóór het laden: dan lijkt "vanavond
+    # het huis van het net (€0,19) en de accu sparen" winst, terwijl de accu morgen toch goedkoop
+    # (€0,13) vol laadt. Ontladen nu en straks goedkoper bijladen is dan beter. Per bewaar-blok:
+    # haal het weg, laad waar nodig opnieuw bij in de goedkoopste uren, en houd wat het goedkoopst is.
+    def topup() -> tuple[_Sim, float]:
+        sim_c = simulate()
+        tot_c = total(sim_c)
+        for _ in range(200):
+            pick = None
+            for k in charge_idx:
+                if not (cfg.grid_charge_enabled or plans[k].price < 0) or gc[k] >= step_charge[k] - EPS:
+                    continue
+                d = min(step_charge[k] - gc[k], step_small[k])
+                gc[k] += d
+                sim_t = simulate()
+                gc[k] -= d
+                applied_t = sim_t.imp[k] - sim_c.imp[k]
+                if applied_t > EPS:
+                    per = (tot_c - total(sim_t)) / applied_t
+                    thr = 0.0 if plans[k].price < 0 else cfg.arbitrage_min_spread
+                    if per > thr and (pick is None or per > pick[0]):
+                        pick = (per, k, d, sim_t)
+            if pick is None:
+                break
+            _, k, d, sim_c = pick
+            gc[k] += d
+            tot_c = total(sim_c)
+            charge_why.setdefault(k, f"laden à €{plans[k].price:.3f}: goedkoper dan de accu eerder sparen")
+        return sim_c, tot_c
+
+    def try_unhold(slots_off: list[int], slack: float) -> bool:
+        nonlocal cur, cur_total
+        keep_gc, keep_hold, keep_why = gc[:], hold[:], dict(charge_why)
+        for m in slots_off:
+            hold[m] = False
+        sim_p, tot_p = topup()
+        if tot_p < cur_total - slack:
+            cur, cur_total = sim_p, tot_p
+            for m in slots_off:
+                hold_why.pop(m, None)
+            return True
+        gc[:], hold[:] = keep_gc, keep_hold
+        charge_why.clear()
+        charge_why.update(keep_why)
+        return False
+
+    if allow_hold and any(hold):
+        # Per uur, het duurste bewaar-uur eerst: vaak is alleen het begin (vanavond, nog wat duurder)
+        # beter uit de accu, en de rest (net zo goedkoop als het laden) wel bewaren.
+        hours_held: dict = {}
+        for k in range(n):
+            if hold[k]:
+                hours_held.setdefault(plans[k].start.replace(minute=0), []).append(k)
+        for _, ks in sorted(hours_held.items(), key=lambda kv: -max(plans[k].price for k in kv[1])):
+            try_unhold(ks, 0.005)
+        # Restjes korter dan een uur: liever weg (geen los geschakel), tenzij dat echt geld kost
+        k = 0
+        while k < n:
+            if not hold[k]:
+                k += 1
+                continue
+            j = k
+            while j + 1 < n and hold[j + 1] and plans[j + 1].start == plans[j].end:
+                j += 1
+            if plans[j].end - plans[k].start < timedelta(minutes=HOLD_MIN_MINUTES):
+                try_unhold(list(range(k, j + 1)), -0.02)
+            k = j + 1
+
     # Geen mini-acties: een kwartier laden onder de minimale laadstroom, of een
     # restje terugleveren, is de moeite niet en geeft alleen geschakel.
     v_nom = cfg.battery_nominal_voltage

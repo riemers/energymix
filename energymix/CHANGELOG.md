@@ -1,5 +1,11 @@
 # Changelog
 
+## Nog niet uitgebracht
+- Bewaren wordt na het plannen per uur nagelopen: als de accu later toch goedkoop vol laadt, ontlaadt hij
+  in de uren waar dat goedkoper is dan later bijladen (prijs boven ongeveer laadprijs / rendement heen en
+  terug). Voorbeeld: vanavond €0,19 en morgen de hele dag €0,13: vanavond uit de accu, niet bewaren. Bewaar-
+  restjes korter dan een uur vallen weg
+
 ## 0.2.41
 - Passthrough: is de accu vol in een goedkoop laadmoment, dan staat er "accu vol: huis direct van het net"
   en blijft de accu staan in plaats van te ontladen en later weer bij te laden. Onder Statistiek een
