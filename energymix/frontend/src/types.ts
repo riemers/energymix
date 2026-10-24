@@ -262,6 +262,16 @@ export interface Stats {
   };
   capacity?: { kwh: number | null; runs: number; charge_kwh?: number | null; discharge_kwh?: number | null };
   roundtrip_setting: number;
+  victron_spec?: VictronSpec;
+}
+
+export interface VictronSpec {
+  model: string;
+  units: number;
+  max_eff: number;
+  zero_load_w: number;
+  standby_w: number;
+  curve: { kw: number; efficiency: number }[];
 }
 
 export interface EfficiencyCycle {

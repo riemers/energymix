@@ -112,6 +112,7 @@ schema:
   arbitrage_min_spread: float?
   export_min_spread: float?
   export_price: list(total|energy)?
+  victron_multi_va: list(3000|5000)?
   energy_tax_eur: float?
   export_enabled: bool?
   grid_charge_enabled: bool?
