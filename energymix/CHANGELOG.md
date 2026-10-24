@@ -1,6 +1,6 @@
 # Changelog
 
-## Nog niet uitgebracht
+## 0.2.40
 - Rendement accu: met de muis over een punt (of erop tikken) zie je de precieze waarde, in het daggrafiekje
   en in de grafiek per vermogen. De ingebouwde tooltips van de browser kwamen in Home Assistant niet door
 - Per vermogen staat er een gestippelde lijn met wat Victron verwacht: een benadering uit de datasheet
