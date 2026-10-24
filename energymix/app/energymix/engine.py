@@ -444,7 +444,9 @@ class Engine:
         season_label = {"day": "Zomer (middag goedkoop)", "night": "Winter (nacht goedkoop)", "neutral": "Neutraal"}.get(
             plan.season.get("effective"), "Onbekend"
         )
-        ess_label = "Laden van net" if cur.ess_state == 9 else "Terugleveren" if (cur.setpoint_w or 0) < 0 else "Zelfverbruik"
+        through = cur.ess_state == 9 and (cur.dvcc_current == 0 or (cur.reasons.get("ess") or "").startswith("accu vol"))
+        ess_label = ("Passthrough (huis van net)" if through else "Laden van net" if cur.ess_state == 9
+                     else "Terugleveren" if (cur.setpoint_w or 0) < 0 else "Zelfverbruik")
         story = " ".join(self.story)
         sensors = {
             f"sensor.{p}_status": (story[:250], {"friendly_name": "Energymix status", "icon": "mdi:lightning-bolt", "verhaal": self.story}),
@@ -462,6 +464,14 @@ class Engine:
                 plan.summary["hold_value_eur"],
                 {"friendly_name": "Energymix accu bewaren zou schelen", "unit_of_measurement": "€",
                  "icon": "mdi:battery-lock", "blokken": plan.summary.get("hold_windows", [])},
+            )
+        pt = plan.summary.get("passthrough")
+        if pt is not None:
+            sensors[f"sensor.{p}_passthrough_winst"] = (
+                pt.get("value_eur", 0),
+                {"friendly_name": "Energymix passthrough winst", "unit_of_measurement": "€", "icon": "mdi:transmission-tower-import",
+                 "kwh_van_net": pt.get("kwh", 0), "waarde_later_per_kwh": pt.get("later_eur_kwh"),
+                 "uitleg": "huis direct van het net terwijl de accu zijn lading houdt, tegenover de accu laten ontladen"},
             )
         rw = plan.summary.get("runway") or {}
         if rw:

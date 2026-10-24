@@ -77,6 +77,22 @@ export interface Season {
   night_avg: number | null;
 }
 
+export interface PassthroughSlot {
+  start: string;
+  end: string;
+  price: number;
+  kwh: number;
+  gain_eur: number;
+  kind: "hold" | "full";
+}
+
+export interface Passthrough {
+  value_eur: number;
+  kwh: number;
+  later_eur_kwh?: number;
+  slots: PassthroughSlot[];
+}
+
 export interface Summary {
   cost_eur?: number;
   baseline_cost_eur?: number;
@@ -94,6 +110,7 @@ export interface Summary {
   pv_kwh_24h?: number;
   hold_value_eur?: number;
   hold_windows?: { start: string; end: string }[];
+  passthrough?: Passthrough;
   runway?: { expected?: string | null; early?: string | null; late?: string | null; basis_until?: string };
 }
 

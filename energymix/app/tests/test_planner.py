@@ -664,3 +664,40 @@ def test_cheap_fill_keeps_charging_when_export_is_planned_tonight():
     plan = make_plan(c, today, State(soc=70, solar_tomorrow_kwh=4), at(10))
     assert plan.summary["export_kwh"] > 0
     assert plan.summary["cheap_fill_kwh"] > 8
+
+
+def _passthrough_case(hold):
+    # Vannacht heel goedkoop (vol laden), morgen overdag €0,14, 's avonds €0,26. Accu-inhoud gewaardeerd
+    # zoals de afgelopen week (€0,24). Is de accu vol, dan het huis direct van het net en de accu sparen.
+    hist = hourly(at(0, day=1), [0.24] * 96)
+    prices = hourly(at(15, day=5), [0.20] * 7 + [0.08] * 8 + [0.14] * 11 + [0.26] * 5 + [0.20] * 2)
+    c = cfg(house_load_default_w=800, battery_capacity_kwh=47, arbitrage_min_spread=0.04, hold_enabled=hold,
+            battery_end_value="week")
+    return make_plan(c, prices, State(soc=40), at(15, 5, day=5), history=hist + prices)
+
+
+def test_passthrough_when_battery_full_and_grid_cheap():
+    plan = _passthrough_case(False)
+    pt = plan.summary["passthrough"]
+    h = by_hour(plan, day=6)
+    # Accu vol om 06u: niet ontladen bij €0,14 maar het huis van het net
+    assert h[8].soc == 100 and h[8].import_kwh == 0.8
+    assert h[8].reasons["ess"].startswith("accu vol: huis direct van het net")
+    assert pt["kwh"] > 5 and pt["value_eur"] > 0.5
+    assert pt["later_eur_kwh"] > 0.2
+    assert abs(sum(s["gain_eur"] for s in pt["slots"]) - pt["value_eur"]) < 0.05
+    # 's Avonds (€0,26) levert de accu gewoon
+    assert h[19].ess_state == ESS_OPTIMIZED and h[19].import_kwh == 0
+
+
+def test_passthrough_counts_hold_too():
+    plan = _passthrough_case(True)
+    pt = plan.summary["passthrough"]
+    assert pt["value_eur"] > 0.5
+    assert {s["kind"] for s in pt["slots"]} <= {"hold", "full"}
+
+
+def test_no_passthrough_without_cheap_hours():
+    prices = hourly(at(0), [0.25] * 24)
+    plan = make_plan(cfg(house_load_default_w=600), prices, State(soc=60), at(0, 5))
+    assert plan.summary["passthrough"] == {"value_eur": 0.0, "kwh": 0.0, "slots": []}

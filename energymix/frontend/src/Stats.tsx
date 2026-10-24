@@ -1,7 +1,7 @@
 import { useState } from "react";
-import type { VictronSpec, EfficiencyCheck, EfficiencyCycle, EfficiencyDay, PowerBin, Plan, Stats as StatsT, Status } from "./types";
+import type { VictronSpec, EfficiencyCheck, EfficiencyCycle, EfficiencyDay, Passthrough, PowerBin, Plan, Stats as StatsT, Status } from "./types";
 import { Card } from "./ui";
-import { eur, relDay, watt } from "./format";
+import { eur, relDay, time, watt } from "./format";
 
 export default function Stats({ stats, status }: { stats: StatsT | null; status: Status }) {
   if (!stats) return <p className="text-sm text-slate-500">Statistiek laden…</p>;
@@ -38,6 +38,19 @@ export default function Stats({ stats, status }: { stats: StatsT | null; status:
           {stats.house_profile && <HouseProfileNote hp={stats.house_profile} />}
         </Card>
       </div>
+
+      {plan?.summary.passthrough && (
+        <Card
+          title="Passthrough: huis direct van het net"
+          right={
+            <span className="text-[11px] text-slate-500">
+              {plan.summary.passthrough.kwh > 0 ? `${plan.summary.passthrough.kwh.toString().replace(".", ",")} kWh · scheelt ${eur(plan.summary.passthrough.value_eur, 2)}` : "nu niet gepland"}
+            </span>
+          }
+        >
+          <PassthroughChart pt={plan.summary.passthrough} tz={status.timezone} />
+        </Card>
+      )}
 
       <Card
         title="Capaciteit accu"
@@ -431,5 +444,83 @@ function HouseProfileNote({ hp }: { hp: NonNullable<StatsT["house_profile"]> }) 
           + `Van ${hp.samples} metingen hadden er ${hp.skipped_no_value} geen huiswaarde en ${hp.skipped_car} vielen weg omdat de auto laadde (Zappi boven 500 W). `
           + `Stel onder Instellingen → Net de huisverbruik-sensor in als het berekenen niet lukt.`}
     </p>
+  );
+}
+
+function PassthroughChart({ pt, tz }: { pt: Passthrough; tz: string }) {
+  const [tip, setTip] = useState<Tip>(null);
+  if (!pt.slots.length)
+    return (
+      <p className="text-sm text-slate-500">
+        In deze planning haalt het huis nergens stroom van het net terwijl de accu zijn lading houdt. Dat gebeurt als de
+        accu vol is in een goedkoop laadmoment, of met "Accu bewaren" aan als de stroom nu goedkoper is dan later. De accu
+        blijft dan staan (niet ontladen, niet laden); valt het net weg, dan neemt de Multi het huis gewoon over.
+      </p>
+    );
+  // Per uur samenvoegen, anders worden het bij kwartierprijzen te dunne staafjes
+  const hours: { start: string; end: string; kwh: number; gain: number; cost: number; kind: Set<string> }[] = [];
+  for (const s of pt.slots) {
+    const hour = s.start.slice(0, 13);
+    const last = hours[hours.length - 1];
+    if (last && last.start.slice(0, 13) === hour) {
+      last.kwh += s.kwh;
+      last.gain += s.gain_eur;
+      last.cost += s.kwh * s.price;
+      last.end = s.end;
+      last.kind.add(s.kind);
+    } else hours.push({ start: s.start, end: s.end, kwh: s.kwh, gain: s.gain_eur, cost: s.kwh * s.price, kind: new Set([s.kind]) });
+  }
+  const W = 1000;
+  const H = 150;
+  const top = 22;
+  const base = H - 22;
+  const max = Math.max(0.01, ...hours.map((h) => Math.abs(h.gain)));
+  const bw = Math.min(60, W / hours.length);
+  const sc = (v: number) => (Math.abs(v) / max) * (base - top);
+  const every = Math.max(1, Math.ceil(hours.length / 12));
+  let cum = 0;
+  const cums = hours.map((h) => (cum += h.gain));
+  const peak = Math.max(0.01, ...cums);
+  const line = cums
+    .map((c, i) => `${i ? "L" : "M"}${(i * bw + bw / 2).toFixed(1)},${(base - (Math.max(0, c) / peak) * (base - top)).toFixed(1)}`)
+    .join(" ");
+  const showTip = (i: number, h: (typeof hours)[number]) =>
+    setTip({
+      x: ((i * bw + bw / 2) / W) * 100,
+      y: ((base - sc(h.gain)) / H) * 100,
+      text: `${relDay(h.start, tz)}–${time(h.end, tz)}: ${h.kwh.toFixed(1).replace(".", ",")} kWh van het net à ${eur(h.cost / Math.max(0.001, h.kwh))}, ${h.kind.has("hold") ? "accu bewaren" : "accu vol"}; scheelt ${eur(h.gain, 2)}`,
+    });
+  return (
+    <div>
+      <p className="mb-2 text-sm text-slate-300">
+        In {hours.length} {hours.length === 1 ? "uur" : "uren"} haalt het huis {pt.kwh.toString().replace(".", ",")} kWh direct van het net
+        en blijft de accu staan. Stroom uit de accu is later ongeveer {eur(pt.later_eur_kwh ?? 0)} per kWh waard; nu kost het net
+        gemiddeld {eur(hours.reduce((a, h) => a + h.cost, 0) / Math.max(0.001, pt.kwh))}. Samen scheelt dat{" "}
+        <b>{eur(pt.value_eur, 2)}</b> tegenover de accu nu laten ontladen.
+      </p>
+      <div className="relative">
+      <svg viewBox={`0 0 ${W} ${H}`} className="h-auto w-full">
+        <line x1={0} x2={W} y1={base} y2={base} stroke="#334155" />
+        {hours.map((h, i) => (
+          <g key={h.start}>
+            <rect x={i * bw + bw * 0.15} y={base - sc(h.gain)} width={bw * 0.7} height={sc(h.gain)} rx={3}
+              fill={h.gain >= 0 ? (h.kind.has("hold") ? "#a78bfa" : "#34d399") : "#f87171"} opacity={0.8} />
+            {/* Brede onzichtbare strook: de tooltip komt ook als je er net naast zit */}
+            <rect x={i * bw} y={top - 10} width={bw} height={base - top + 10} fill="transparent" style={{ cursor: "pointer" }}
+              onMouseEnter={() => showTip(i, h)} onMouseLeave={() => setTip(null)} onClick={() => showTip(i, h)} />
+            {i % every === 0 && (
+              <text x={i * bw + bw / 2} y={H - 6} textAnchor="middle" className="fill-slate-500 text-[10px]">{time(h.start, tz)}</text>
+            )}
+          </g>
+        ))}
+        <path d={line} fill="none" stroke="#fbbf24" strokeWidth={2} strokeOpacity={0.7} strokeLinejoin="round" pointerEvents="none" />
+        <text x={0} y={12} className="fill-emerald-300/80 text-[11px]">▮ accu vol</text>
+        <text x={90} y={12} className="fill-violet-300/80 text-[11px]">▮ accu bewaren</text>
+        <text x={210} y={12} className="fill-amber-300/80 text-[11px]">― opgeteld</text>
+        <text x={W} y={12} textAnchor="end" className="fill-slate-500 text-[11px]">max {eur(max, 2)} per uur</text>
+      </svg>
+      <TipBox tip={tip} />
+      </div>
+    </div>
   );
 }
