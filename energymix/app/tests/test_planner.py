@@ -701,3 +701,18 @@ def test_no_passthrough_without_cheap_hours():
     prices = hourly(at(0), [0.25] * 24)
     plan = make_plan(cfg(house_load_default_w=600), prices, State(soc=60), at(0, 5))
     assert plan.summary["passthrough"] == {"value_eur": 0.0, "kwh": 0.0, "slots": []}
+
+
+def test_no_hold_in_evening_when_battery_refills_cheaper_tomorrow():
+    # Vanavond €0,19, daarna de hele nacht en dag €0,132, morgenavond €0,31. Accu-inhoud gewaardeerd
+    # als de afgelopen week (€0,28). Bewaren vanavond lijkt dan winst, maar de accu laadt morgen toch
+    # vol: vanavond ontladen en morgen voor €0,132/0,85 ≈ €0,155 bijladen is goedkoper.
+    hist = hourly(at(0, day=1), [0.28] * 96)
+    prices = hourly(at(19, day=5), [0.19] * 3 + [0.132] * 18 + [0.31] * 4 + [0.22] * 3)
+    c = cfg(house_load_default_w=1300, battery_capacity_kwh=47, hold_enabled=True, battery_target_soc=100,
+            battery_end_value="week")
+    plan = make_plan(c, prices, State(soc=67), at(19, 5, day=5), history=hist + prices)
+    h = by_hour(plan, day=5)
+    for hr in (19, 20, 21):
+        assert h[hr].ess_state == ESS_OPTIMIZED, h[hr].reasons["ess"]
+    assert any(s.grid_charge_kwh > 0 for s in plan.slots)
