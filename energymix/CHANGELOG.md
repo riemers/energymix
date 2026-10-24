@@ -1,6 +1,6 @@
 # Changelog
 
-## Nog niet uitgebracht
+## 0.2.42
 - Bewaren wordt na het plannen per uur nagelopen: als de accu later toch goedkoop vol laadt, ontlaadt hij
   in de uren waar dat goedkoper is dan later bijladen (prijs boven ongeveer laadprijs / rendement heen en
   terug). Voorbeeld: vanavond €0,19 en morgen de hele dag €0,13: vanavond uit de accu, niet bewaren. Bewaar-
