@@ -57,6 +57,7 @@ EDITABLE = [
     ("arbitrage_min_spread", "Min. winst laden van net voor eigen gebruik (€/kWh, bv. 0,03)", "number", "Strategie"),
     ("export_min_spread", "Min. winst terugleveren/verkopen (€/kWh, bv. 0,15)", "number", "Strategie"),
     ("roundtrip_efficiency", "Rendement accu heen en terug", "number", "Strategie"),
+    ("victron_multi_va", "Victron Multi's: 48/3000 of 48/5000 (VA per stuk)", "select:3000,5000", "Accu"),
     ("cheap_fill_price", "Onder deze prijs meteen vol laden als de zon het niet vult (€/kWh, bv. 0,15; 0 = uit)", "number", "Strategie"),
     ("battery_end_value", "Accu-inhoud na de bekende prijzen waarderen", "select:careful,week", "Strategie"),
 ]
@@ -72,6 +73,32 @@ FALLBACK = {
     "grid_l3_entity": ("phases", "Victron MQTT"),
     "house_power_entity": (None, "berekend: zon + net - accu - Zappi"),
 }
+
+
+# Victron-datasheet MultiPlus-II 48V (230V): max. rendement omvormen en verbruik zonder last.
+# Laadrendement geeft Victron niet op; dat nemen we gelijk aan omvormen.
+VICTRON_SPECS = {"3000": {"max_eff": 0.95, "zero_load_w": 11, "max_w": 2400},
+                 "5000": {"max_eff": 0.96, "zero_load_w": 18, "max_w": 4000}}
+SPEC_LINEAR = 0.02  # deel van het verlies dat evenredig met het vermogen is (benadering)
+
+
+def victron_spec(model: str, units: int) -> dict:
+    """Verwacht rendement per kW totaal AC-vermogen volgens de Victron-specs, verdeeld over de Multi's.
+
+    Verlies per Multi = nullast + a·p + b·p², met b zo gekozen dat het maximum gelijk is aan het
+    datasheet-maximum. Een benadering van de curve, geen meting.
+    """
+    sp = VICTRON_SPECS.get(str(model), VICTRON_SPECS["5000"])
+    p0, a = sp["zero_load_w"], SPEC_LINEAR
+    b = ((1 / sp["max_eff"] - 1 - a) / 2) ** 2 / p0
+    units = max(1, int(units))
+    out = []
+    for kw in range(1, int(sp["max_w"] * units / 1000) + 1):
+        p = kw * 1000 / units
+        eff = p / (p + p0 + a * p + b * p * p)
+        out.append({"kw": kw, "efficiency": round(eff, 3)})
+    return {"model": f"MultiPlus-II 48/{model if str(model) in VICTRON_SPECS else '5000'}", "units": units,
+            "max_eff": sp["max_eff"], "zero_load_w": p0, "standby_w": p0 * units, "curve": out}
 
 
 def entity_age(st: dict | None) -> float | None:
@@ -148,6 +175,7 @@ def create_app(engine: Engine) -> web.Application:
         s["charge_w_used"] = round(charge_w)
         s["charge_w_source"] = "gemeten" if s.get("learned_charge_w") else "berekend uit DVCC max"
         s["roundtrip_setting"] = cfg.roundtrip_efficiency
+        s["victron_spec"] = victron_spec(cfg.victron_multi_va, engine.victron.vebus_phases() or 1)
         s["house_profile"] = {**engine.house_info, "default_w": cfg.house_load_default_w}
         if st and st.soc is not None:
             need = max(0.0, cfg.battery_target_soc - st.soc) / 100 * cfg.battery_capacity_kwh

@@ -113,6 +113,7 @@ class Config:
     battery_capacity_kwh: float = 47.0
     battery_capacity_mode: str = "measured"  # measured | fixed: gemeten capaciteit gebruiken zodra die er is
     battery_nominal_voltage: float = 52.0
+    victron_multi_va: str = "5000"  # type Multi's (48/3000 of 48/5000), voor de verwachte rendementslijn
     charge_efficiency: float = 0.93
     roundtrip_efficiency: float = 0.85
     dvcc_max_charge_current: int = 150

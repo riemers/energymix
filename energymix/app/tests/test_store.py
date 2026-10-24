@@ -153,3 +153,12 @@ def test_power_curve_per_kw_and_standby(tmp_path):
     assert by[3]["charge"] == 0.95 and by[8]["charge"] == 0.9  # uitschieter (900 W DC) telt niet
     assert by[3]["discharge"] == round(3000 / 3200, 3) and by[3]["roundtrip"] is not None
     assert pc["standby_w"] == 70
+
+
+def test_victron_spec_curve_peaks_at_datasheet_max():
+    from energymix.web import victron_spec
+
+    sp = victron_spec("5000", 3)
+    effs = [c["efficiency"] for c in sp["curve"]]
+    assert max(effs) == 0.96 and effs[0] < max(effs)
+    assert sp["standby_w"] == 54 and len(effs) == 12

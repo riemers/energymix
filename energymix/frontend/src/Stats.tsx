@@ -1,4 +1,5 @@
-import type { EfficiencyCheck, EfficiencyCycle, EfficiencyDay, PowerBin, Plan, Stats as StatsT, Status } from "./types";
+import { useState } from "react";
+import type { VictronSpec, EfficiencyCheck, EfficiencyCycle, EfficiencyDay, PowerBin, Plan, Stats as StatsT, Status } from "./types";
 import { Card } from "./ui";
 import { eur, relDay, watt } from "./format";
 
@@ -82,7 +83,7 @@ export default function Stats({ stats, status }: { stats: StatsT | null; status:
           </div>
           <div>
             <div className="mb-1 text-xs text-slate-400">Per vermogen (AC tegen DC van de accumonitor)</div>
-            <PowerCurve curve={stats.efficiency.power_curve} />
+            <PowerCurve curve={stats.efficiency.power_curve} spec={stats.victron_spec} />
           </div>
         </div>
         {!!stats.efficiency.checked?.length && <EfficiencyChecks checks={stats.efficiency.checked} />}
@@ -208,16 +209,49 @@ function EfficiencyCycles({ cycles }: { cycles: EfficiencyCycle[] }) {
   );
 }
 
-function PowerCurve({ curve }: { curve?: { bins: PowerBin[]; standby_w: number | null } }) {
+type Tip = { x: number; y: number; text: string } | null;
+
+/** Klein zwevend label boven een punt in een grafiek; werkt met muis en met tikken. */
+function TipBox({ tip }: { tip: Tip }) {
+  if (!tip) return null;
+  return (
+    <div
+      className="pointer-events-none absolute z-10 whitespace-nowrap rounded-md border border-white/10 bg-slate-900/95 px-2 py-1 text-[11px] text-slate-100 shadow-lg"
+      style={{
+        left: `${tip.x}%`,
+        top: `calc(${tip.y}% - 8px)`,
+        transform: `translate(${tip.x > 70 ? "-100%" : tip.x < 30 ? "0" : "-50%"}, -100%)`,
+      }}
+    >
+      {tip.text}
+    </div>
+  );
+}
+
+/** Onzichtbare, ruime cirkel rond een punt die het label laat zien. */
+function HitDot({ cx, cy, W, H, text, setTip }: { cx: number; cy: number; W: number; H: number; text: string; setTip: (t: Tip) => void }) {
+  const show = () => setTip({ x: (cx / W) * 100, y: (cy / H) * 100, text });
+  return (
+    <circle cx={cx} cy={cy} r={14} fill="transparent" style={{ cursor: "pointer" }}
+      onMouseEnter={show} onMouseLeave={() => setTip(null)} onClick={show} />
+  );
+}
+
+function PowerCurve({ curve, spec }: {
+  curve?: { bins: PowerBin[]; standby_w: number | null };
+  spec?: VictronSpec;
+}) {
+  const [tip, setTip] = useState<Tip>(null);
   const bins = curve?.bins ?? [];
   const standby = curve?.standby_w;
-  const note =
-    standby != null ? (
-      <p className="mt-1 text-[11px] text-slate-500">
-        Eigenverbruik van de Multi's: {standby} W, ≈{((standby * 24) / 1000).toFixed(1)} kWh per dag. Dat telt in het
-        rendement heen en terug mee als verlies.
-      </p>
-    ) : null;
+  const note = (
+    <p className="mt-1 text-[11px] text-slate-500">
+      {standby != null
+        ? `Eigenverbruik van de Multi's: ${standby} W, ≈${((standby * 24) / 1000).toFixed(1)} kWh per dag. Dat telt in het rendement heen en terug mee als verlies.`
+        : ""}
+      {spec ? ` Volgens Victron: ${spec.units} × ${spec.zero_load_w} W = ${spec.standby_w} W zonder last (${spec.model}).` : ""}
+    </p>
+  );
   if (!bins.length)
     return (
       <>
@@ -229,46 +263,70 @@ function PowerCurve({ curve }: { curve?: { bins: PowerBin[]; standby_w: number |
   const H = 150;
   const pad = 34;
   const maxKw = Math.max(...bins.map((b) => b.kw));
-  const vals = bins.flatMap((b) => [b.charge, b.discharge]).filter((v): v is number => v !== null);
+  const specPts = (spec?.curve ?? []).filter((c) => c.kw <= maxKw);
+  const vals = [
+    ...bins.flatMap((b) => [b.charge, b.discharge]).filter((v): v is number => v !== null),
+    ...specPts.map((c) => c.efficiency),
+  ];
   const lo = Math.max(0.6, Math.floor((Math.min(...vals) - 0.02) * 50) / 50);
   const hi = Math.min(1, Math.ceil((Math.max(...vals) + 0.01) * 50) / 50);
   const x = (kw: number) => pad + 14 + ((kw - 1) / Math.max(1, maxKw - 1)) * (W - pad - 28);
-  const y = (v: number) => 8 + ((hi - v) / (hi - lo)) * (H - 30);
-  const series = (key: "charge" | "discharge", color: string) => {
+  const y = (v: number) => 18 + ((hi - v) / (hi - lo)) * (H - 40);
+  const path = (pts: [number, number][]) => pts.map(([a, b], i) => `${i ? "L" : "M"}${x(a).toFixed(1)},${y(b).toFixed(1)}`).join(" ");
+  const series = (key: "charge" | "discharge", color: string, label: string) => {
     const pts = bins.filter((b) => b[key] !== null);
     return (
       <g>
-        <path d={pts.map((b, i) => `${i ? "L" : "M"}${x(b.kw).toFixed(1)},${y(b[key]!).toFixed(1)}`).join(" ")}
-          fill="none" stroke={color} strokeWidth={2} />
+        <path d={path(pts.map((b) => [b.kw, b[key]!]))} fill="none" stroke={color} strokeWidth={2} />
         {pts.map((b) => (
-          <circle key={b.kw} cx={x(b.kw)} cy={y(b[key]!)} r={3.5} fill={color}>
-            <title>{`${key === "charge" ? "Laden" : "Ontladen"} rond ${b.kw} kW: ${pct(b[key]!)} (${key === "charge" ? b.n_charge : b.n_discharge} min)${b.roundtrip ? `, heen en terug ${pct(b.roundtrip)}` : ""}`}</title>
-          </circle>
+          <circle key={b.kw} cx={x(b.kw)} cy={y(b[key]!)} r={3.5} fill={color} />
         ))}
+        {pts.map((b) => {
+          const exp = specPts.find((c) => c.kw === b.kw);
+          return (
+            <HitDot key={`h${b.kw}`} cx={x(b.kw)} cy={y(b[key]!)} W={W} H={H} setTip={setTip}
+              text={`${label} rond ${b.kw} kW: ${pct(b[key]!)} gemeten (${key === "charge" ? b.n_charge : b.n_discharge} min)${exp ? `, Victron ±${pct(exp.efficiency)}` : ""}${b.roundtrip ? ` · heen en terug ${pct(b.roundtrip)}` : ""}`} />
+          );
+        })}
       </g>
     );
   };
   return (
     <>
-      <svg viewBox={`0 0 ${W} ${H}`} className="h-auto w-full">
-        {[lo, (lo + hi) / 2, hi].map((v) => (
-          <g key={v}>
-            <line x1={pad} x2={W} y1={y(v)} y2={y(v)} stroke="#1e293b" strokeDasharray="2 5" />
-            <text x={pad - 5} y={y(v) + 3} textAnchor="end" className="fill-slate-500 text-[10px]">{pct(v)}</text>
-          </g>
-        ))}
-        {bins.map((b) => (
-          <text key={b.kw} x={x(b.kw)} y={H - 4} textAnchor="middle" className="fill-slate-500 text-[10px]">{b.kw} kW</text>
-        ))}
-        {series("charge", "#34d399")}
-        {series("discharge", "#38bdf8")}
-        <text x={W} y={11} textAnchor="end" className="fill-emerald-300/80 text-[11px]">● laden</text>
-        <text x={W - 60} y={11} textAnchor="end" className="fill-sky-300/80 text-[11px]">● ontladen</text>
-      </svg>
+      <div className="relative">
+        <svg viewBox={`0 0 ${W} ${H}`} className="h-auto w-full">
+          {[lo, (lo + hi) / 2, hi].map((v) => (
+            <g key={v}>
+              <line x1={pad} x2={W} y1={y(v)} y2={y(v)} stroke="#1e293b" strokeDasharray="2 5" />
+              <text x={pad - 5} y={y(v) + 3} textAnchor="end" className="fill-slate-500 text-[10px]">{pct(v)}</text>
+            </g>
+          ))}
+          {bins.map((b) => (
+            <text key={b.kw} x={x(b.kw)} y={H - 4} textAnchor="middle" className="fill-slate-500 text-[10px]">{b.kw} kW</text>
+          ))}
+          {specPts.length > 1 && (
+            <g>
+              <path d={path(specPts.map((c) => [c.kw, c.efficiency]))} fill="none" stroke="#fbbf24" strokeOpacity={0.7}
+                strokeWidth={1.5} strokeDasharray="5 4" />
+              {specPts.map((c) => (
+                <HitDot key={`s${c.kw}`} cx={x(c.kw)} cy={y(c.efficiency)} W={W} H={H} setTip={setTip}
+                  text={`Victron verwacht bij ${c.kw} kW: ±${pct(c.efficiency)} per omzetting (benadering uit de datasheet)`} />
+              ))}
+            </g>
+          )}
+          {series("charge", "#34d399", "Laden")}
+          {series("discharge", "#38bdf8", "Ontladen")}
+          <text x={W} y={11} textAnchor="end" className="fill-emerald-300/80 text-[11px]">● laden</text>
+          <text x={W - 52} y={11} textAnchor="end" className="fill-sky-300/80 text-[11px]">● ontladen</text>
+          {specPts.length > 1 && <text x={W - 120} y={11} textAnchor="end" className="fill-amber-300/80 text-[11px]">- - Victron</text>}
+        </svg>
+        <TipBox tip={tip} />
+      </div>
       {note}
     </>
   );
 }
+
 
 function EfficiencyChecks({ checks }: { checks: EfficiencyCheck[] }) {
   return (
@@ -292,6 +350,7 @@ function EfficiencyChecks({ checks }: { checks: EfficiencyCheck[] }) {
 }
 
 function EfficiencyChart({ days, setting }: { days: EfficiencyDay[]; setting: number }) {
+  const [tip, setTip] = useState<Tip>(null);
   const W = 1000;
   const H = 120;
   const pad = 34;
@@ -303,30 +362,36 @@ function EfficiencyChart({ days, setting }: { days: EfficiencyDay[]; setting: nu
   const line = days.map((d, i) => `${i ? "L" : "M"}${x(i).toFixed(1)},${y(d.efficiency).toFixed(1)}`).join(" ");
   const every = Math.max(1, Math.ceil(days.length / 10));
   return (
-    <svg viewBox={`0 0 ${W} ${H}`} className="h-auto w-full">
-      {[lo, (lo + hi) / 2, hi].map((v) => (
-        <g key={v}>
-          <line x1={pad} x2={W} y1={y(v)} y2={y(v)} stroke="#1e293b" strokeDasharray="2 5" />
-          <text x={pad - 5} y={y(v) + 3} textAnchor="end" className="fill-slate-500 text-[10px]">{pct(v)}</text>
-        </g>
-      ))}
-      <line x1={pad} x2={W} y1={y(setting)} y2={y(setting)} stroke="#fbbf24" strokeOpacity={0.5} strokeDasharray="5 5" />
-      <path d={line} fill="none" stroke="#38bdf8" strokeWidth={2} strokeLinejoin="round" />
-      {days.map((d, i) => (
-        <g key={d.date}>
-          <circle cx={x(i)} cy={y(d.efficiency)} r={3.5} fill="#38bdf8">
-            <title>{`${new Date(d.date).toLocaleDateString("nl-NL", { day: "numeric", month: "short" })}: ${pct(d.efficiency)} (${d.in_kwh} kWh erin, ${d.out_kwh} kWh eruit)`}</title>
-          </circle>
-          {i % every === 0 && (
-            <text x={x(i)} y={H - 4} textAnchor="middle" className="fill-slate-500 text-[10px]">
-              {new Date(d.date).toLocaleDateString("nl-NL", { day: "numeric", month: "numeric" })}
-            </text>
-          )}
-        </g>
-      ))}
-    </svg>
+    <div className="relative">
+      <svg viewBox={`0 0 ${W} ${H}`} className="h-auto w-full">
+        {[lo, (lo + hi) / 2, hi].map((v) => (
+          <g key={v}>
+            <line x1={pad} x2={W} y1={y(v)} y2={y(v)} stroke="#1e293b" strokeDasharray="2 5" />
+            <text x={pad - 5} y={y(v) + 3} textAnchor="end" className="fill-slate-500 text-[10px]">{pct(v)}</text>
+          </g>
+        ))}
+        <line x1={pad} x2={W} y1={y(setting)} y2={y(setting)} stroke="#fbbf24" strokeOpacity={0.5} strokeDasharray="5 5" />
+        <path d={line} fill="none" stroke="#38bdf8" strokeWidth={2} strokeLinejoin="round" />
+        {days.map((d, i) => (
+          <g key={d.date}>
+            <circle cx={x(i)} cy={y(d.efficiency)} r={3.5} fill="#38bdf8" />
+            {i % every === 0 && (
+              <text x={x(i)} y={H - 4} textAnchor="middle" className="fill-slate-500 text-[10px]">
+                {new Date(d.date).toLocaleDateString("nl-NL", { day: "numeric", month: "numeric" })}
+              </text>
+            )}
+          </g>
+        ))}
+        {days.map((d, i) => (
+          <HitDot key={`h${d.date}`} cx={x(i)} cy={y(d.efficiency)} W={W} H={H} setTip={setTip}
+            text={`${new Date(d.date).toLocaleDateString("nl-NL", { weekday: "short", day: "numeric", month: "short" })}: ${pct(d.efficiency)} (${d.in_kwh} kWh erin, ${d.out_kwh} kWh eruit)`} />
+        ))}
+      </svg>
+      <TipBox tip={tip} />
+    </div>
   );
 }
+
 
 function PlanFacts({ plan, tz }: { plan: Plan | null; tz: string }) {
   if (!plan) return null;

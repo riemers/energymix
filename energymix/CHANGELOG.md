@@ -1,5 +1,13 @@
 # Changelog
 
+## Nog niet uitgebracht
+- Rendement accu: met de muis over een punt (of erop tikken) zie je de precieze waarde, in het daggrafiekje
+  en in de grafiek per vermogen. De ingebouwde tooltips van de browser kwamen in Home Assistant niet door
+- Per vermogen staat er een gestippelde lijn met wat Victron verwacht: een benadering uit de datasheet
+  (maximaal rendement en verbruik zonder last per Multi), verdeeld over het aantal Multi's. Met de muis
+  erover zie je de verwachte waarde; bij de gemeten punten staat hij ernaast. Kies onder Instellingen ›
+  Accu of je 48/3000 of 48/5000 Multi's hebt (standaard 48/5000)
+
 ## 0.2.39
 - Rendement accu per cyclus: van een accustand weg (minstens 15 procentpunt) en terug op dezelfde stand,
   ook over meerdere dagen. Dan hangt de uitkomst nauwelijks af van een kleine fout in de SoC, wat bij de
