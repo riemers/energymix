@@ -1,6 +1,6 @@
 # Changelog
 
-## Nog niet uitgebracht
+## 0.2.41
 - Passthrough: is de accu vol in een goedkoop laadmoment, dan staat er "accu vol: huis direct van het net"
   en blijft de accu staan in plaats van te ontladen en later weer bij te laden. Onder Statistiek een
   grafiek per uur met wat dat scheelt (en wat accustroom later waard is), plus
