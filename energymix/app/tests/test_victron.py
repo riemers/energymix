@@ -99,3 +99,17 @@ def test_inverter_ac_power_and_energy_counters():
     assert x.inverter_energy_kwh() == (124.0, 98.0)  # doorlopen van net naar AC-uit telt niet
     x.connected = False
     assert x.inverter_energy_kwh() == (None, None)
+
+
+def test_settings_readback():
+    gx = v()
+    assert gx.setting("ess") is None
+    gx.connected = True
+    gx.handle("N/abc123/settings/0/Settings/CGwacs/BatteryLife/State", b'{"value": 10}', now=0)
+    gx.handle("N/abc123/settings/0/Settings/SystemSetup/MaxChargeCurrent", b'{"value": 50}', now=0)
+    assert gx.setting("ess") == 10.0  # instellingen verouderen niet
+    assert gx.setting("dvcc") == 50.0
+    assert gx.setting("feed_in") is None
+    assert "N/abc123/settings/0/Settings/CGwacs/BatteryLife/State" in gx._watch()
+    gx.connected = False
+    assert gx.setting("ess") is None

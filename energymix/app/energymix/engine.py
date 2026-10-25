@@ -367,6 +367,8 @@ class Engine:
             value, why = self.regulator.step(self.plan.now, self.state)
             if value is not None and value != self.executor._last_desired.get("dvcc"):
                 await self.executor.apply_dvcc(value, why, self.master)
+            # Iets anders (Node-RED?) kan de Victron terugzetten: niet een kwartier wachten
+            await self.executor.enforce(self.master)
 
     async def run(self) -> None:
         asyncio.create_task(self.ha.run())
@@ -518,6 +520,8 @@ class Engine:
             "sources": self.sources,
             "victron_connected": self.victron.connected,
             "regulator": reg,
+            "victron_overrides": self.executor.overrides[-5:],
+            "victron_ess": self.victron.setting("ess"),
             "battery": self.battery_live(st),
         }
 

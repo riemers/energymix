@@ -19,6 +19,8 @@ from .victron import Victron
 log = logging.getLogger(__name__)
 
 REASSERT_SECONDS = 3600  # Victron-instellingen zonder terugkoppeling eens per uur opnieuw zetten
+ECHO_SECONDS = 20  # zo lang na schrijven nog niet teruglezen: de GX moet de nieuwe waarde eerst melden
+READBACK = ("ess", "dvcc", "setpoint")  # instellingen die we van de Victron terug kunnen lezen
 
 
 @dataclass
@@ -41,6 +43,7 @@ class Executor:
         self._last_desired: dict[str, object] = {}
         self._last_written: dict[str, tuple[object, float]] = {}
         self.last_actions: list[Action] = []
+        self.overrides: list[dict] = []  # keren dat iets anders onze Victron-instelling veranderde
 
     def live(self, component: str, master: bool = True) -> bool:
         return master and getattr(self.cfg.control, component, False)
@@ -54,12 +57,12 @@ class Executor:
         if sp.zappi_mode is not None:
             actions.append(Action("zappi", sp.zappi_mode, self.ha.state(c.zappi_mode_entity), r.get("zappi", ""), self.live("zappi", master)))
         if sp.ess_state is not None:
-            actions.append(Action("ess", sp.ess_state, self._written("ess"), r.get("ess", ""), self.live("ess", master)))
+            actions.append(Action("ess", sp.ess_state, self._actual("ess"), r.get("ess", ""), self.live("ess", master)))
         if sp.dvcc_current is not None:
             value, why = dvcc if dvcc and dvcc[0] is not None else (sp.dvcc_current, r.get("dvcc", ""))
-            actions.append(Action("dvcc", value, self._written("dvcc"), why, self.live("dvcc", master)))
+            actions.append(Action("dvcc", value, self._actual("dvcc"), why, self.live("dvcc", master)))
         if sp.setpoint_w is not None:
-            actions.append(Action("setpoint", sp.setpoint_w, self._written("setpoint"), r.get("setpoint", ""), self.live("setpoint", master)))
+            actions.append(Action("setpoint", sp.setpoint_w, self._actual("setpoint"), r.get("setpoint", ""), self.live("setpoint", master)))
         if sp.feed_in_disabled is not None:
             actions.append(Action("feed_in", sp.feed_in_disabled, self._written("feed_in"), r.get("feed_in", ""), self.live("feed_in", master)))
         return actions
@@ -73,10 +76,31 @@ class Executor:
 
     async def apply_dvcc(self, value: int, reason: str, master: bool = True) -> Action:
         """Tussentijdse DVCC-aanpassing door de regelaar."""
-        a = Action("dvcc", value, self._written("dvcc"), reason, self.live("dvcc", master))
+        a = Action("dvcc", value, self._actual("dvcc"), reason, self.live("dvcc", master))
         await self._run(a)
         self.last_actions = [x for x in self.last_actions if x.component != "dvcc"] + [a]
         return a
+
+    async def enforce(self, master: bool = True) -> list[Action]:
+        """Tussendoor: staat de Victron nog op wat wij willen? Zo niet, direct terugzetten.
+
+        Iets anders (bv. een Node-RED flow) kan de ESS-stand of laadstroom veranderen.
+        Zonder deze controle bleef de add-on denken dat de accu laadt tot het volgende
+        kwartier of zelfs een uur later.
+        """
+        done = []
+        for a in list(self.last_actions):
+            if a.component not in READBACK or not a.live or not master or self._echo_pending(a.component):
+                continue
+            actual = self._readback(a.component)
+            if actual is None or _same(actual, a.desired):
+                continue
+            why = f"teruggezet, Victron stond op {_fmt(actual)} (iets anders veranderde het): {a.reason}"
+            b = Action(a.component, a.desired, actual, why, a.live)
+            await self._run(b)
+            self.last_actions = [b if x is a else x for x in self.last_actions]
+            done.append(b)
+        return done
 
     async def _run(self, a: Action) -> None:
         if a.live:
@@ -117,6 +141,25 @@ class Executor:
         v = self._last_written.get(kind)
         return v[0] if v else None
 
+    def _readback(self, kind: str) -> float | None:
+        getter = getattr(self.victron, "setting", None)
+        return getter(kind) if getter and kind in READBACK else None
+
+    def _actual(self, kind: str):
+        """Wat de Victron nu heeft: teruggelezen, anders wat we het laatst schreven."""
+        v = self._readback(kind)
+        return v if v is not None else self._written(kind)
+
+    def _echo_pending(self, kind: str) -> bool:
+        last = self._last_written.get(kind)
+        return bool(last and time.time() - last[1] < ECHO_SECONDS)
+
+    def _note_override(self, kind: str, found: float, desired: object) -> None:
+        log.warning("Victron %s stond op %s in plaats van %s: iets anders (bv. Node-RED) heeft het veranderd, "
+                    "zet het terug", kind, _fmt(found), desired)
+        self.overrides = [*self.overrides, {"ts": time.time(), "component": kind, "found": _fmt(found),
+                                            "desired": desired}][-20:]
+
     async def _execute(self, a: Action) -> bool:
         if a.component == "pv":
             if a.actual == a.desired:
@@ -128,12 +171,30 @@ class Executor:
                 return False
             await self.ha.call_service("select", "select_option", self.cfg.zappi_mode_entity, {"option": a.desired})
             return True
-        # Victron: geen read-back, dus schrijven bij wijziging of eens per uur
         last = self._last_written.get(a.component)
-        if last and last[0] == a.desired and time.time() - last[1] < REASSERT_SECONDS:
+        actual = None if self._echo_pending(a.component) else self._readback(a.component)
+        if actual is not None:
+            # Teruggelezen: alleen schrijven als de Victron iets anders heeft staan
+            if _same(actual, a.desired):
+                return False
+            if last and last[0] == a.desired:
+                self._note_override(a.component, actual, a.desired)
+        elif last and last[0] == a.desired and time.time() - last[1] < REASSERT_SECONDS:
+            # Geen terugkoppeling: schrijven bij wijziging of eens per uur
             return False
         if not self.victron.configured:
             raise RuntimeError("MQTT/Victron niet geconfigureerd")
         await self.victron.write(a.component, int(a.desired))
         self._last_written[a.component] = (a.desired, time.time())
         return True
+
+
+def _same(actual: float, desired: object) -> bool:
+    try:
+        return abs(float(actual) - float(desired)) < 0.5  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        return False
+
+
+def _fmt(v: float) -> object:
+    return int(v) if float(v).is_integer() else v

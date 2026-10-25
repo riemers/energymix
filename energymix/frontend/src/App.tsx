@@ -139,6 +139,30 @@ export default function App() {
   );
 }
 
+const OVERRIDE_LABEL: Record<string, (v: number | string) => string> = {
+  ess: (v) => `ESS-stand ${v}${v == 9 ? " (laden)" : v == 10 ? " (zelfverbruik)" : ""}`,
+  dvcc: (v) => `laadstroom ${v} A`,
+  setpoint: (v) => `net-setpoint ${v} W`,
+};
+
+/** Iets anders (bv. Node-RED) zette de Victron terug: laten zien, de add-on zet het meteen weer goed. */
+function Overrides({ live, tz }: { live: Live; tz?: string }) {
+  const recent = (live.victron_overrides ?? []).filter((o) => Date.now() / 1000 - o.ts < 3 * 3600);
+  if (!recent.length) return null;
+  const o = recent[recent.length - 1];
+  const label = OVERRIDE_LABEL[o.component] ?? ((v: number | string) => `${o.component} ${v}`);
+  return (
+    <div className="flex flex-wrap items-center gap-2 border-t border-white/5 pt-2 text-xs text-slate-400">
+      <Badge tone="red">Victron overschreven</Badge>
+      <span>
+        {time(new Date(o.ts * 1000).toISOString(), tz)}: stond op {label(o.found)} in plaats van {label(o.desired)}.
+        Iets anders stuurt mee (Node-RED?); teruggezet.
+        {recent.length > 1 && ` ${recent.length}× in de laatste 3 uur.`}
+      </span>
+    </div>
+  );
+}
+
 function Overview({ status, live, onStatus }: { status: Status; live: Live; onStatus: (s: Status) => void }) {
   const tz = status.timezone;
   const plan = status.plan;
@@ -155,11 +179,16 @@ function Overview({ status, live, onStatus }: { status: Status; live: Live; onSt
             {plan?.summary.runway && <Runway r={plan.summary.runway} tz={tz} />}
             {reg.headroom_w !== null && (
               <div className="flex flex-wrap items-center gap-2 border-t border-white/5 pt-2 text-xs text-slate-400">
-                <span className="text-slate-300">Accu laadt met {reg.current_a} A</span>
+                <span className="text-slate-300">
+                  {(live.battery_w ?? 0) < -100
+                    ? `Accu mag laden met ${reg.current_a} A, maar levert nu ${watt(live.battery_w)}`
+                    : `Accu laadt met ${reg.current_a} A`}
+                </span>
                 <span>· nog {watt(reg.headroom_w)} ruimte voor de accu</span>
                 {reg.car_throttled && <Badge tone="pink">Zappi regelt terug: auto gaat voor</Badge>}
               </div>
             )}
+            <Overrides live={live} tz={tz} />
           </div>
         </Card>
 

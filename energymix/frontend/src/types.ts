@@ -161,6 +161,8 @@ export interface Live {
   victron_phases: number[];
   sources: Record<string, string>;
   victron_connected: boolean;
+  victron_ess?: number | null;
+  victron_overrides?: { ts: number; component: string; found: number; desired: number | string }[];
   battery?: {
     capacity_kwh: number;
     capacity_source: "gemeten" | "ingesteld";

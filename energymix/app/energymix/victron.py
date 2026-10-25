@@ -43,6 +43,26 @@ class Victron:
             "setpoint": f"W/{p}/settings/0/Settings/CGwacs/AcPowerSetPoint",
         }[kind]
 
+    def setting_path(self, kind: str) -> str | None:
+        """Leespad (N/...) van een instelling die we schrijven, voor terugkoppeling."""
+        return {
+            "ess": "settings/0/Settings/CGwacs/BatteryLife/State",
+            "dvcc": "settings/0/Settings/SystemSetup/MaxChargeCurrent",
+            "setpoint": "settings/0/Settings/CGwacs/AcPowerSetPoint",
+        }.get(kind)
+
+    def setting(self, kind: str) -> float | None:
+        """Wat de Victron nu werkelijk heeft staan (None: onbekend of niet terug te lezen).
+
+        Instellingen worden alleen bij wijziging gepubliceerd, dus geen verouderingscheck;
+        wel alleen zolang de verbinding er is.
+        """
+        path = self.setting_path(kind)
+        if not path or not self.connected:
+            return None
+        v = self.values.get(path)
+        return v[0] if v else None
+
     async def write(self, kind: str, value: int) -> None:
         async with aiomqtt.Client(self.host, self.port, username=self.username, password=self.password) as c:
             await c.publish(self.topic(kind), json.dumps({"value": value}))
@@ -58,6 +78,10 @@ class Victron:
             f"N/{p}/system/0/ActiveBatteryService",
             # ESS: tot waar mag de accu ontladen
             f"N/{p}/settings/0/Settings/CGwacs/BatteryLife/MinimumSocLimit",
+            # Wat we zelf schrijven: teruglezen, zodat we zien als iets anders het terugzet
+            f"N/{p}/settings/0/Settings/CGwacs/BatteryLife/State",
+            f"N/{p}/settings/0/Settings/SystemSetup/MaxChargeCurrent",
+            f"N/{p}/settings/0/Settings/CGwacs/AcPowerSetPoint",
             f"N/{p}/system/0/Ac/PvOnGrid/+/Power",
             f"N/{p}/system/0/Ac/PvOnOutput/+/Power",
             f"N/{p}/vebus/{self.vebus}/Ac/NumberOfPhases",

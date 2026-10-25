@@ -158,3 +158,65 @@ async def test_boost_switches_itself_off(tmp_path):
     await e._boost_auto_off()
     assert calls == [("turn_off", "input_boolean.energymix_auto_snel_laden")]
     assert not e.cfg.car_boost
+
+
+class ReadbackVictron:
+    """Victron die terugmeldt wat er staat, zoals de GX via MQTT."""
+
+    configured = True
+
+    def __init__(self):
+        self.writes = []
+        self.now: dict[str, float] = {}
+
+    async def write(self, kind, value):
+        self.writes.append((kind, value))
+        self.now[kind] = float(value)
+
+    def setting(self, kind):
+        return self.now.get(kind)
+
+
+async def test_ess_reset_by_someone_else_is_written_again(tmp_path):
+    from energymix import executor as ex_mod
+
+    v = ReadbackVictron()
+    cfg = Config(control=Control(ess=True, dvcc=True))
+    ex = Executor(cfg, None, v, Store(tmp_path / "t.db"))
+    sp = slot(ess_state=9, dvcc_current=40)
+    await ex.apply(sp)
+    assert v.writes == [("ess", 9), ("dvcc", 40)]
+
+    # Node-RED zet de ESS terug op zelfverbruik; binnen de echo-tijd nog niets doen
+    v.now["ess"] = 10.0
+    assert await ex.enforce() == []
+    for k in list(ex._last_written):
+        val, _ = ex._last_written[k]
+        ex._last_written[k] = (val, 0)  # lang geleden geschreven
+    done = await ex.enforce()
+    assert [(a.component, a.desired, a.actual) for a in done] == [("ess", 9, 10.0)]
+    assert v.writes[-1] == ("ess", 9)
+    assert ex.overrides[-1]["component"] == "ess" and ex.overrides[-1]["found"] == 10
+    assert "teruggezet" in done[0].reason
+
+    # Alles klopt: niets schrijven, ook niet bij het volgende kwartier
+    n = len(v.writes)
+    ex._last_written = {k: (val, 0) for k, (val, _) in ex._last_written.items()}
+    assert await ex.enforce() == []
+    await ex.apply(sp)
+    assert len(v.writes) == n
+
+    # Het volgende kwartier ziet het ook zonder enforce
+    v.now["ess"] = 10.0
+    await ex.apply(sp)
+    assert v.writes[-1] == ("ess", 9)
+    assert ex_mod.ECHO_SECONDS > 0
+
+
+async def test_enforce_ignores_shadow_mode(tmp_path):
+    v = ReadbackVictron()
+    ex = Executor(Config(control=Control(ess=False)), None, v, Store(tmp_path / "t.db"))
+    await ex.apply(slot(ess_state=9))
+    v.now["ess"] = 10.0
+    assert await ex.enforce() == []
+    assert v.writes == []
