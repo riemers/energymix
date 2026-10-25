@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.2.43
+- Fix: de add-on zei "accu laadt" terwijl de accu ontlaadde. Iets anders (waarschijnlijk de Node-RED flow)
+  zette de ESS-stand van de Victron terug op zelfverbruik, en de add-on schreef die pas een uur later
+  opnieuw. Nu leest de add-on de ESS-stand, laadstroom en het net-setpoint terug van de Victron en zet ze
+  binnen een halve minuut weer goed als ze veranderd zijn
+- Op het overzicht staat een melding "Victron overschreven" met wat er stond en wanneer; ontlaadt de accu
+  toch, dan staat er "accu mag laden met … A, maar levert nu …" in plaats van "accu laadt"
+
 ## 0.2.42
 - Bewaren wordt na het plannen per uur nagelopen: als de accu later toch goedkoop vol laadt, ontlaadt hij
   in de uren waar dat goedkoper is dan later bijladen (prijs boven ongeveer laadprijs / rendement heen en
