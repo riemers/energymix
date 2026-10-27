@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.2.44
+- Fix: de prijzen van morgen kwamen soms pas rond 14:00 binnen, of pas na de verversknop. De add-on
+  probeerde ontbrekende prijzen maar één keer per uur opnieuw, en de poging van ±13:00 was vaak net te
+  vroeg. Vanaf 13:00 probeert hij het nu elke 5 minuten tot morgen binnen is; plan en dashboard
+  werken zich daarna vanzelf bij (het dashboard ververst elke 30 seconden)
+
 ## 0.2.43
 - Fix: de add-on zei "accu laadt" terwijl de accu ontlaadde. Iets anders (waarschijnlijk de Node-RED flow)
   zette de ESS-stand van de Victron terug op zelfverbruik, en de add-on schreef die pas een uur later

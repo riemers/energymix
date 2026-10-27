@@ -31,6 +31,7 @@ log = logging.getLogger(__name__)
 
 SAMPLE_SECONDS = 60
 PUBLISH_PREFIX = "energymix"
+PRICE_RETRY_AFTER_13 = 300  # s tussen pogingen zolang de prijzen van morgen ontbreken
 
 
 class Engine:
@@ -249,17 +250,28 @@ class Engine:
         return self.stats_cache[1]
 
     # ------------------------------------------------------------ prijzen
+    def _price_retry_seconds(self, now: datetime | None = None) -> float | None:
+        """Seconden tot de volgende poging om ontbrekende prijzen op te halen, None als er niets ontbreekt.
+
+        Morgen komt rond 13:00 binnen. Ervoor is elk uur proberen genoeg, vanaf 13:00 elke 5 minuten:
+        anders kan het tot 14:00 duren voordat het plan de nieuwe prijzen ziet.
+        """
+        now = now or datetime.now(timezone.utc)
+        if not self.prices:
+            return max(0.0, self.prices_fetched + 60 - now.timestamp())
+        if self.prices[-1].end > now + timedelta(hours=12):
+            return None
+        wait = PRICE_RETRY_AFTER_13 if now.astimezone(self.tz).hour >= 13 else 3600
+        return max(0.0, self.prices_fetched + wait - now.timestamp())
+
     async def refresh_prices(self, force: bool = False) -> None:
-        now = datetime.now(timezone.utc)
-        covered = self.prices and self.prices[-1].end > now + timedelta(hours=12)
-        stale = time.time() - self.prices_fetched > 3600
-        # Morgen komt rond 13:00 binnen: tot die tijd elk uur opnieuw proberen
-        if not (force or not self.prices or (not covered and stale)):
+        retry = self._price_retry_seconds()
+        if not force and (retry is None or retry > 0):
             return
         if not self.cfg.tibber_token:
             raise RuntimeError("Geen Tibber-token ingesteld")
+        self.prices_fetched = time.time()  # laatste poging, ook als die mislukt: niet elke 5 s opnieuw
         self.prices = await fetch_prices(self.session, self.cfg.tibber_token, self.cfg.price_resolution)
-        self.prices_fetched = time.time()
         self.store.save_prices(self.prices)
 
     # ------------------------------------------------------------ helpers
@@ -385,7 +397,7 @@ class Engine:
                 log.exception("Cyclus mislukt")
             self._wake.clear()
             try:
-                await asyncio.wait_for(self._wake.wait(), self._seconds_to_next_tick())
+                await asyncio.wait_for(self._wake.wait(), self._seconds_to_next_cycle())
                 await asyncio.sleep(5)  # debounce: meerdere wijzigingen tegelijk
             except asyncio.TimeoutError:
                 pass
@@ -436,6 +448,12 @@ class Engine:
     def _seconds_to_next_tick(self) -> float:
         step = self.cfg.interval_minutes * 60
         return step - (time.time() % step) + 2
+
+    def _seconds_to_next_cycle(self) -> float:
+        """Volgende kwartier, of eerder als er na 13:00 nog op de prijzen van morgen gewacht wordt."""
+        tick = self._seconds_to_next_tick()
+        retry = self._price_retry_seconds()
+        return tick if retry is None else max(5.0, min(tick, retry + 1))
 
     # ------------------------------------------------------------ naar HA
     async def publish(self) -> None:
