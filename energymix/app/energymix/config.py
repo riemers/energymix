@@ -144,6 +144,7 @@ class Config:
     car_ready_time: str = "07:30"
     car_boost: bool = False  # "Auto nu snel laden": Fast tot vol, boven alle planning
     car_window: str = "auto"  # laadmoment: auto (goedkoopst) | night (22-07) | day (07-19)
+    car_off: bool = False  # "Auto laden: Niet": Zappi op Stopped, ook geen zon
     car_opportunistic_price: float = 0.15  # boven het minimum alleen laden onder deze prijs
     charge_speed_km_per_hour: float = 65
     default_charge_minutes: int = 360

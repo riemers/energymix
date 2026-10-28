@@ -143,7 +143,7 @@ async def test_boost_switches_itself_off(tmp_path):
     calls = []
 
     async def fake_call(domain, service, entity_id, data=None):
-        calls.append((service, entity_id))
+        calls.append((service, entity_id, data))
 
     e.ha.call_service = fake_call
     # Aangezet vóór het insteken: niet meteen uit
@@ -156,7 +156,7 @@ async def test_boost_switches_itself_off(tmp_path):
     assert calls == []
     e.state = State(zappi_plug="EV Connected", zappi_status="Complete")
     await e._boost_auto_off()
-    assert calls == [("turn_off", "input_boolean.energymix_auto_snel_laden")]
+    assert calls == [("select_option", "input_select.energymix_auto_laden", {"option": "Goedkoopst"})]
     assert not e.cfg.car_boost
 
 

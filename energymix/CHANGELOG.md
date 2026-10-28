@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.2.45
+- Nieuw: één keuzelijst **Auto laden** (`input_select.energymix_auto_laden`) met Goedkoopst / Nacht /
+  Nu / Niet. Bedoeld voor HomeKit: de bridge toont het als één tegel met vier knoppen, en het
+  Energymix-dashboard beweegt mee
+  - Goedkoopst: goedkoopste blok binnen alle bekende prijzen (na ~13:00 dus ook morgen)
+  - Nacht: goedkoopste blok tussen 22:00 en 07:00
+  - Nu: Fast tot de auto vol is (of de stekker eruit gaat), daarna vanzelf terug naar Goedkoopst
+  - Niet: de Zappi gaat op Stopped, ook geen zonne-overschot
+- Vervangt de schakelaar `input_boolean.energymix_auto_snel_laden` en de keuzelijst
+  `input_select.energymix_laadmoment` (de stand Overdag vervalt). De oude helpers worden niet meer
+  gelezen; je kunt ze in HA verwijderen
+
 ## 0.2.44
 - Fix: de prijzen van morgen kwamen soms pas rond 14:00 binnen, of pas na de verversknop. De add-on
   probeerde ontbrekende prijzen maar één keer per uur opnieuw, en de poging van ±13:00 was vaak net te

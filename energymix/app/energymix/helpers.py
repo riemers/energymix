@@ -32,16 +32,19 @@ class Helper:
     label: str
 
 
-CHARGE_WINDOW_OPTIONS = {
-    "Automatisch (goedkoopst)": "auto",
-    "'s Nachts (22-07)": "night",
-    "Overdag (07-19)": "day",
+# Eén keuzelijst voor de auto (ook in HomeKit: één tegel met vier knoppen).
+# Vervangt de losse "auto snel laden"-schakelaar en het laadmoment.
+CAR_CHARGE_OPTIONS = {
+    "Goedkoopst": "auto",
+    "Nacht": "night",
+    "Nu": "now",
+    "Niet": "off",
 }
-OPTIONS_BY_KEY = {"season_mode": SEASON_OPTIONS, "car_window": CHARGE_WINDOW_OPTIONS}
+OPTIONS_BY_KEY = {"season_mode": SEASON_OPTIONS, "car_charge": CAR_CHARGE_OPTIONS}
 
 
-def _window(s: str) -> str | None:
-    return CHARGE_WINDOW_OPTIONS.get(s)
+def _car_charge(s: str) -> str | None:
+    return CAR_CHARGE_OPTIONS.get(s)
 
 
 def _bool(s: str) -> bool:
@@ -70,9 +73,10 @@ HELPERS: list[Helper] = [
         _bool, "Aansturen (hoofdschakelaar)",
     ),
     Helper(
-        "input_boolean.energymix_auto_snel_laden", "car_boost",
-        {"type": "input_boolean/create", "name": "Energymix auto snel laden", "icon": "mdi:car-electric"},
-        _bool, "Auto nu snel laden (tot vol)",
+        "input_select.energymix_auto_laden", "car_charge",
+        {"type": "input_select/create", "name": "Auto laden", "options": list(CAR_CHARGE_OPTIONS),
+         "icon": "mdi:car-electric", "initial": "Goedkoopst"},
+        _car_charge, "Auto laden",
     ),
     Helper(
         "input_boolean.energymix_terugleveren", "export_enabled",
@@ -106,12 +110,6 @@ HELPERS: list[Helper] = [
         {"type": "input_datetime/create", "name": "Energymix auto klaar om", "has_date": False, "has_time": True,
          "icon": "mdi:clock-check", "initial": "07:30:00"},
         _time, "Vol vóór (als 'vannacht' aan staat)",
-    ),
-    Helper(
-        "input_select.energymix_laadmoment", "car_window",
-        {"type": "input_select/create", "name": "Energymix laadmoment", "options": list(CHARGE_WINDOW_OPTIONS),
-         "icon": "mdi:clock-time-four-outline", "initial": "Automatisch (goedkoopst)"},
-        _window, "Laadmoment auto",
     ),
     Helper(
         "input_select.energymix_seizoen", "season_mode",
@@ -157,7 +155,27 @@ def apply_overrides(cfg: Config, values: dict[str, Any]) -> Config:
     from dataclasses import replace
 
     fields = {k: v for k, v in values.items() if k != "master" and hasattr(cfg, k)}
+    if "car_charge" in values:
+        fields.update(car_charge_fields(values["car_charge"]))
     return replace(cfg, **fields)
+
+
+def car_charge_fields(mode: str) -> dict[str, Any]:
+    """"Auto laden"-stand naar de config-velden die de planner gebruikt."""
+    return {
+        "car_boost": mode == "now",
+        "car_window": "night" if mode == "night" else "auto",
+        "car_off": mode == "off",
+    }
+
+
+def car_charge_mode(cfg: Config) -> str:
+    """Huidige "Auto laden"-stand uit de config (als de helper (nog) niet bestaat)."""
+    if cfg.car_off:
+        return "off"
+    if cfg.car_boost:
+        return "now"
+    return "night" if cfg.car_window == "night" else "auto"
 
 
 async def set_helper(ha: HomeAssistant, key: str, value: Any) -> None:
@@ -171,6 +189,10 @@ async def set_helper(ha: HomeAssistant, key: str, value: Any) -> None:
     elif domain == "input_datetime":
         await ha.call_service(domain, "set_datetime", h.entity_id, {"time": f"{str(value)[:5]}:00"})
     elif domain == "input_select":
-        opts = OPTIONS_BY_KEY.get(key, {})
-        option = next((k for k, v in opts.items() if v == value), value)
-        await ha.call_service(domain, "select_option", h.entity_id, {"option": option})
+        await ha.call_service(domain, "select_option", h.entity_id, {"option": option_label(key, value)})
+
+
+def option_label(key: str, value: Any) -> str:
+    """Interne waarde (bv. "night") naar de optietekst in HA (bv. "Nacht")."""
+    opts = OPTIONS_BY_KEY.get(key, {})
+    return next((k for k, v in opts.items() if v == value), str(value))
