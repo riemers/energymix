@@ -33,6 +33,7 @@ class Helper:
 
 
 # Eén keuzelijst voor de auto (ook in HomeKit: één tegel met vier knoppen).
+# HA leidt de entity_id af van de naam, dus die moet met "Energymix" beginnen.
 # Vervangt de losse "auto snel laden"-schakelaar en het laadmoment.
 CAR_CHARGE_OPTIONS = {
     "Goedkoopst": "auto",
@@ -74,7 +75,7 @@ HELPERS: list[Helper] = [
     ),
     Helper(
         "input_select.energymix_auto_laden", "car_charge",
-        {"type": "input_select/create", "name": "Auto laden", "options": list(CAR_CHARGE_OPTIONS),
+        {"type": "input_select/create", "name": "Energymix auto laden", "options": list(CAR_CHARGE_OPTIONS),
          "icon": "mdi:car-electric", "initial": "Goedkoopst"},
         _car_charge, "Auto laden",
     ),
