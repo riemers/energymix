@@ -149,7 +149,9 @@ def create_app(engine: Engine) -> web.Application:
         for h in helpers.HELPERS:
             exists = h.entity_id in engine.ha.states
             value = engine.helper_values.get(h.key) if exists else (
-                engine.master if h.key == "master" else getattr(engine.cfg, h.key, None)
+                engine.master if h.key == "master"
+                else helpers.car_charge_mode(engine.cfg) if h.key == "car_charge"
+                else getattr(engine.cfg, h.key, None)
             )
             attrs = engine.ha.attributes(h.entity_id)
             out.append({
@@ -238,8 +240,12 @@ def create_app(engine: Engine) -> web.Application:
         if h.entity_id in engine.ha.states:
             await helpers.set_helper(engine.ha, key, value)
             engine.ha.states.setdefault(h.entity_id, {})["state"] = (
-                ("on" if value else "off") if h.entity_id.startswith("input_boolean") else str(value)
+                ("on" if value else "off") if h.entity_id.startswith("input_boolean")
+                else helpers.option_label(key, value) if h.entity_id.startswith("input_select")
+                else str(value)
             )
+        elif key == "car_charge":
+            engine.base_cfg.update(helpers.car_charge_fields(value))
         elif key != "master":
             engine.base_cfg.update({key: value})
         await engine.cycle()

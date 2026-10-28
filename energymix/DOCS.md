@@ -35,8 +35,7 @@ automations gebruiken. Ze zijn hetzelfde als de schakelaars in het Energymix-das
 | Helper | Betekenis |
 |--------|-----------|
 | `input_boolean.energymix_aansturen` | Hoofdschakelaar (uit = alleen meekijken) |
-| `input_select.energymix_laadmoment` | Automatisch (goedkoopst), 's Nachts (22-07) of Overdag (07-19) |
-| `input_boolean.energymix_auto_snel_laden` | Auto nu Fast tot vol, boven alle planning; gaat vanzelf uit |
+| `input_select.energymix_auto_laden` | Auto laden: Goedkoopst (alle bekende prijzen, na ~13:00 ook morgen), Nacht (22-07), Nu (Fast tot vol, daarna vanzelf terug naar Goedkoopst) of Niet (lader uit, ook bij zon) |
 | `input_boolean.energymix_terugleveren` | Terugleveren bij grote prijsverschillen |
 | `input_boolean.energymix_accu_van_net_laden` | Accu goedkoop van het net laden |
 | `input_boolean.energymix_accu_bewaren` | Accu bewaren voor duurdere momenten (standaard uit) |
@@ -44,6 +43,10 @@ automations gebruiken. Ze zijn hetzelfde als de schakelaars in het Energymix-das
 | `input_number.energymix_accu_reserve` | Reserve die nooit teruggeleverd wordt (%) |
 | `input_datetime.energymix_auto_klaar_om` | Met "vannacht" aan: auto vol vóór deze tijd |
 | `input_select.energymix_seizoen` | Automatisch / Zomer / Winter |
+
+**HomeKit.** Zet `input_select.energymix_auto_laden` in de HomeKit-bridge van Home Assistant. In de
+Woning-app wordt het één tegel "Auto laden" met vier knoppen waarvan er altijd één aan staat. Wat je
+daar kiest, zie je ook in het Energymix-dashboard en andersom.
 
 En deze sensoren: `sensor.energymix_status` (het verhaal), `sensor.energymix_prijs_nu`,
 `sensor.energymix_accu_modus`, `sensor.energymix_zappi_plan`, `sensor.energymix_seizoen`,

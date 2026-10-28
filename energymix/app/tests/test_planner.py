@@ -332,6 +332,28 @@ def test_keeps_charging_when_later_block_barely_cheaper():
     assert plan.now.zappi_mode == "Eco+"
 
 
+def test_car_charge_off_stops_zappi_even_with_sun_or_manual_mode():
+    prices = hourly(at(0), [0.05] * 24)
+    st = State(zappi_plug="EV Connected", carcharger_mode="fast", cars=car("100"))
+    plan = make_plan(cfg(car_off=True), prices, st, at(8, 30))
+    assert {s.zappi_mode for s in plan.slots} == {"Stopped"}
+    assert plan.car.off and plan.car.planned_kwh == 0
+
+
+def test_car_charge_select_maps_to_planner_fields():
+    from energymix.helpers import apply_overrides, car_charge_mode, read_helpers
+
+    class FakeHA:
+        def state(self, eid):
+            return "Nacht" if eid == "input_select.energymix_auto_laden" else ""
+
+    vals = read_helpers(FakeHA())
+    c = apply_overrides(cfg(car_boost=True), vals)
+    assert (c.car_window, c.car_boost, c.car_off) == ("night", False, False)
+    assert car_charge_mode(apply_overrides(cfg(), {"car_charge": "now"})) == "now"
+    assert car_charge_mode(apply_overrides(cfg(), {"car_charge": "off"})) == "off"
+
+
 def test_boost_fast_now_until_full_even_if_expensive():
     prices = hourly(at(0), [0.50] * 12 + [0.05] * 12)  # nu duur, later goedkoop
     st = State(zappi_plug="EV Connected", carcharger_mode="auto", cars=car("270"))  # 130 km = 2u

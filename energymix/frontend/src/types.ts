@@ -60,6 +60,7 @@ export interface CarPlan {
   eco_km: number;
   eco_reason: string;
   boost: boolean;
+  off: boolean;
   max_source: string;
   charge_limit: number | null;
   speed_kmh: number | null;

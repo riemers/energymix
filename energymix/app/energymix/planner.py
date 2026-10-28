@@ -166,6 +166,7 @@ class CarPlan:
     eco_km: float = 0.0
     eco_reason: str = ""
     boost: bool = False
+    off: bool = False
     max_source: str = "ingesteld"
     charge_limit: float | None = None
     speed_kmh: float | None = None
@@ -488,6 +489,13 @@ def _plan_car(cfg, tz, now, slots, plans, state: State, notes, season: dict | No
     if not cfg.zappi_mode_entity:
         return cp
     mode = state.carcharger_mode
+
+    if cfg.car_off:
+        # "Auto laden: Niet": helemaal niet laden, ook niet op zon
+        cp.off = True
+        for sp in plans:
+            sp.zappi_mode, sp.reasons["zappi"] = "Stopped", "auto laden staat op Niet"
+        return cp
 
     if mode == "ecoa":
         for sp in plans:

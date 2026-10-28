@@ -403,7 +403,7 @@ class Engine:
                 pass
 
     async def _boost_auto_off(self) -> None:
-        """"Auto nu snel laden" zet zichzelf uit als de auto vol is of de stekker eruit gaat.
+        """"Auto laden: Nu" gaat vanzelf terug naar Goedkoopst als de auto vol is of de stekker eruit gaat.
 
         Aangezet vóór het insteken? Dan wachten we tot de auto eerst aangesloten is
         geweest, anders zou hij direct weer uitgaan.
@@ -417,11 +417,11 @@ class Engine:
         reason = "auto vol" if st.car_full else "stekker eruit" if (self._boost_plugged and not st.car_plugged) else None
         if not reason:
             return
-        log.info("Snel laden klaar (%s): schakelaar uit", reason)
+        log.info("Nu laden klaar (%s): terug naar Goedkoopst", reason)
         self._boost_plugged = False
         try:
-            await helpers.set_helper(self.ha, "car_boost", False)
-            self.helper_values["car_boost"] = False
+            await helpers.set_helper(self.ha, "car_charge", "auto")
+            self.helper_values["car_charge"] = "auto"
             self.cfg = self.executor.cfg = self.regulator.cfg = self.effective(
                 helpers.apply_overrides(self.base_cfg, self.helper_values)
             )

@@ -1,9 +1,18 @@
 import { useState } from "react";
 import { setHelper } from "./api";
 import { eur, relDay, time } from "./format";
-import { Leaf, Moon, Sun } from "./icons";
+import { Bolt, Leaf, Moon, Sun } from "./icons";
 import { Segmented, Slider, Switch } from "./ui";
 import type { HelperInfo, Status } from "./types";
+
+type CarMode = "auto" | "night" | "now" | "off";
+
+const CAR_MODE_TEXT: Record<CarMode, string> = {
+  auto: "In de goedkoopste uren van alle bekende prijzen (na ~13:00 ook morgen)",
+  night: "In de goedkoopste uren tussen 22:00 en 07:00",
+  now: "Nu Fast tot de auto vol is, daarna vanzelf terug naar Goedkoopst",
+  off: "De lader blijft uit, ook bij zon",
+};
 
 interface Props {
   status: Status;
@@ -23,17 +32,28 @@ export default function Controls({ status, onStatus }: Props) {
     }
   };
 
+  const carMode = (h.car_charge?.value as CarMode) ?? "auto";
   const season = status.plan?.season;
   const missing = status.helpers.filter((x) => !x.exists).length;
 
   return (
     <div className="space-y-4">
-      <div className={`-mx-1 rounded-xl px-1 py-1 transition ${h.car_boost?.value ? "bg-pink-500/10 ring-1 ring-pink-400/40" : ""}`}>
-        <Row
-          title="Auto nu snel laden"
-          sub={h.car_boost?.value ? "Aan: Fast tot de auto vol is, daarna gaat dit vanzelf uit" : "Boeien wat het kost: nu Fast tot vol (gaat vanzelf weer uit)"}
-          right={<Switch checked={!!h.car_boost?.value} disabled={busy === "car_boost"} onChange={(v) => set("car_boost", v)} />}
+      <div className={`-mx-1 space-y-2 rounded-xl px-1 py-1 transition ${carMode === "now" ? "bg-pink-500/10 ring-1 ring-pink-400/40" : ""}`}>
+        <div className="flex items-baseline justify-between">
+          <span className="text-sm text-slate-200">Auto laden</span>
+          <span className="text-[11px] text-slate-500">ook in HomeKit</span>
+        </div>
+        <Segmented
+          value={carMode}
+          onChange={(v) => set("car_charge", v)}
+          options={[
+            { value: "auto", label: "Goedkoopst" },
+            { value: "night", label: <><Moon size={13} /> Nacht</> },
+            { value: "now", label: <><Bolt size={13} /> Nu</> },
+            { value: "off", label: "Niet" },
+          ]}
         />
+        <p className="text-[11px] leading-snug text-slate-500">{CAR_MODE_TEXT[carMode]}</p>
       </div>
       <Row
         title="Aansturen"
@@ -64,17 +84,6 @@ export default function Controls({ status, onStatus }: Props) {
         </Field>
         <Field label="Reserve bij terugleveren">
           <Slider value={Number(h.battery_reserve_soc?.value ?? 30)} min={10} max={80} step={5} unit="%" accent="#fbbf24" onCommit={(v) => set("battery_reserve_soc", v)} />
-        </Field>
-        <Field label="Laadmoment auto">
-          <Segmented
-            value={(h.car_window?.value as "auto" | "night" | "day") ?? "auto"}
-            onChange={(v) => set("car_window", v)}
-            options={[
-              { value: "auto", label: "Goedkoopst" },
-              { value: "night", label: <><Moon size={13} /> Nacht</> },
-              { value: "day", label: <><Sun size={13} /> Dag</> },
-            ]}
-          />
         </Field>
         <Field label={<span>Vol vóór<span className="block text-[10px] text-slate-500">alleen met "vannacht" (nu {status.state?.vannacht ? "aan" : "uit"})</span></span>}>
           <label className={`flex items-center gap-2 rounded-lg bg-white/5 px-3 py-1.5 text-sm ${status.state?.vannacht ? "" : "opacity-50"}`}>
