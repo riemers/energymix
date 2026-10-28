@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.2.46
+- Fix: de keuzelijst Auto laden werd aangemaakt als `input_select.auto_laden` in plaats van
+  `input_select.energymix_auto_laden` (HA maakt de naam uit de titel). De add-on vond hem daardoor niet,
+  zei "1 helper bestaat nog niet" en maakte bij elke herstart een nieuwe aan (`auto_laden_2`). Een keuze
+  in HomeKit kwam zo niet in Energymix aan. Nieuwe installaties krijgen nu de goede naam
+
 ## 0.2.45
 - Nieuw: één keuzelijst **Auto laden** (`input_select.energymix_auto_laden`) met Goedkoopst / Nacht /
   Nu / Niet. Bedoeld voor HomeKit: de bridge toont het als één tegel met vier knoppen, en het
