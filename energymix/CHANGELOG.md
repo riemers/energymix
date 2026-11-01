@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.2.47
+- Fix: "teruggezet, Victron stond op 11 (iets anders veranderde het)" terwijl er niets anders
+  meestuurde. De Victron gaat in zelfverbruik (stand 10) zelf naar 11 als de accu op het minimum zit,
+  en naar 12 als hij vanaf het minimum bijlaadt. De add-on zag dat als een ingreep van buiten en zette
+  het elke halve minuut terug op 10. Standen 10, 11 en 12 tellen nu als hetzelfde
+- Fix: de reden bij terugzetten werd telkens voor de vorige reden geplakt, waardoor de statustekst
+  steeds langer werd. Er staat nu één keer wat er gebeurde
+
 ## 0.2.46
 - Fix: de keuzelijst Auto laden werd aangemaakt als `input_select.auto_laden` in plaats van
   `input_select.energymix_auto_laden` (HA maakt de naam uit de titel). De add-on vond hem daardoor niet,
