@@ -220,3 +220,34 @@ async def test_enforce_ignores_shadow_mode(tmp_path):
     v.now["ess"] = 10.0
     assert await ex.enforce() == []
     assert v.writes == []
+
+
+async def test_victron_substates_of_self_consumption_are_not_an_override(tmp_path):
+    # Bij lage SoC zet de Victron zelf 10 -> 11 (en 12 bij bijladen); dat is geen ingreep van buiten
+    v = ReadbackVictron()
+    ex = Executor(Config(control=Control(ess=True)), None, v, Store(tmp_path / "t.db"))
+    await ex.apply(slot(ess_state=10))
+    assert v.writes == [("ess", 10)]
+    ex._last_written = {k: (val, 0) for k, (val, _) in ex._last_written.items()}
+    for state in (11.0, 12.0):
+        v.now["ess"] = state
+        assert await ex.enforce() == []
+        await ex.apply(slot(ess_state=10))
+    assert v.writes == [("ess", 10)]
+    assert ex.overrides == []
+    # Laden (9) wil wel echt 9 hebben
+    await ex.apply(slot(ess_state=9))
+    assert v.writes[-1] == ("ess", 9)
+
+
+async def test_override_reason_does_not_pile_up(tmp_path):
+    v = ReadbackVictron()
+    ex = Executor(Config(control=Control(ess=True)), None, v, Store(tmp_path / "t.db"))
+    sp = slot(ess_state=9)
+    sp.reasons["ess"] = "laden van het net"
+    await ex.apply(sp)
+    for _ in range(3):
+        v.now["ess"] = 10.0
+        ex._last_written = {k: (val, 0) for k, (val, _) in ex._last_written.items()}
+        done = await ex.enforce()
+    assert done[0].reason == "teruggezet, Victron stond op 10 (iets anders veranderde het): laden van het net"

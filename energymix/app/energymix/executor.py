@@ -21,6 +21,11 @@ log = logging.getLogger(__name__)
 REASSERT_SECONDS = 3600  # Victron-instellingen zonder terugkoppeling eens per uur opnieuw zetten
 ECHO_SECONDS = 20  # zo lang na schrijven nog niet teruglezen: de GX moet de nieuwe waarde eerst melden
 READBACK = ("ess", "dvcc", "setpoint")  # instellingen die we van de Victron terug kunnen lezen
+OVERRIDE_PREFIX = "teruggezet, Victron stond op "
+# ESS BatteryLife/State: 10 = "Optimized zonder BatteryLife". De Victron schakelt zelf naar 11
+# (accu op minimum-SoC) en 12 (bijladen vanaf minimum) en weer terug. Dat zijn dus geen
+# afwijkingen van wat wij schreven: voor ons zijn 10, 11 en 12 hetzelfde.
+ESS_SAME = ({10, 11, 12},)
 
 
 @dataclass
@@ -93,9 +98,9 @@ class Executor:
             if a.component not in READBACK or not a.live or not master or self._echo_pending(a.component):
                 continue
             actual = self._readback(a.component)
-            if actual is None or _same(actual, a.desired):
+            if actual is None or _same(a.component, actual, a.desired):
                 continue
-            why = f"teruggezet, Victron stond op {_fmt(actual)} (iets anders veranderde het): {a.reason}"
+            why = f"{OVERRIDE_PREFIX}{_fmt(actual)} (iets anders veranderde het): {_base_reason(a.reason)}"
             b = Action(a.component, a.desired, actual, why, a.live)
             await self._run(b)
             self.last_actions = [b if x is a else x for x in self.last_actions]
@@ -175,7 +180,7 @@ class Executor:
         actual = None if self._echo_pending(a.component) else self._readback(a.component)
         if actual is not None:
             # Teruggelezen: alleen schrijven als de Victron iets anders heeft staan
-            if _same(actual, a.desired):
+            if _same(a.component, actual, a.desired):
                 return False
             if last and last[0] == a.desired:
                 self._note_override(a.component, actual, a.desired)
@@ -189,11 +194,23 @@ class Executor:
         return True
 
 
-def _same(actual: float, desired: object) -> bool:
+def _same(kind: str, actual: float, desired: object) -> bool:
     try:
-        return abs(float(actual) - float(desired)) < 0.5  # type: ignore[arg-type]
+        a, d = float(actual), float(desired)  # type: ignore[arg-type]
     except (TypeError, ValueError):
         return False
+    if abs(a - d) < 0.5:
+        return True
+    if kind == "ess":
+        return any(round(a) in g and round(d) in g for g in ESS_SAME)
+    return False
+
+
+def _base_reason(reason: str) -> str:
+    """De oorspronkelijke reden, zonder eerdere 'teruggezet ...'-voorvoegsels."""
+    while reason.startswith(OVERRIDE_PREFIX) and "): " in reason:
+        reason = reason.split("): ", 1)[1]
+    return reason
 
 
 def _fmt(v: float) -> object:
