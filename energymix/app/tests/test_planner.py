@@ -738,3 +738,18 @@ def test_no_hold_in_evening_when_battery_refills_cheaper_tomorrow():
     for hr in (19, 20, 21):
         assert h[hr].ess_state == ESS_OPTIMIZED, h[hr].reasons["ess"]
     assert any(s.grid_charge_kwh > 0 for s in plan.slots)
+
+
+def test_charges_cheap_to_export_at_expensive_peak():
+    # Nacht €0,40, morgen piek €0,85: goedkoop laden, bewaren en in de piek terugleveren.
+    # Stap voor stap vond de planner dat niet (laden zonder teruglevering levert weinig op,
+    # terugleveren zonder lading kan niet); de startzoektocht probeert het nu samen.
+    prices = hourly(at(0), [0.45] * 22 + [0.40, 0.40] + [0.40] * 6 + [0.55] * 10 + [0.85] * 3 + [0.55] * 5)
+    c = cfg(export_enabled=True, hold_enabled=True, battery_reserve_soc=25, house_load_default_w=0)
+    plan = make_plan(c, prices, State(soc=5, min_soc=5), at(22, 5))
+    assert plan.summary["grid_charge_kwh"] > 10
+    assert plan.summary["export_kwh"] > 10
+    peak = [s for s in plan.slots if s.price >= 0.85]
+    assert all(s.setpoint_w < 0 for s in peak)
+    night = [s for s in plan.slots if s.price <= 0.40]
+    assert any(s.grid_charge_kwh > 0 for s in night)
