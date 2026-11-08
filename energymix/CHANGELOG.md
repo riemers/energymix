@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.2.48
+- Fix: laden óm terug te leveren werd nooit gepland. Bij nacht €0,40 en morgen een piek van €0,85
+  laadde de accu alleen wat het huis morgen zelf nodig heeft. Stap voor stap zag de planner de winst
+  niet: laden zonder geplande teruglevering levert alleen eigen gebruik op, en terugleveren zonder
+  lading kan niet. De startzoektocht (laden + bewaren) probeert nu ook varianten met terugleveren in
+  de duurste kwartieren; de teruglevering moet daarbij zelf de drempel voor terugleveren halen
+- Statustekst: bij bewaren (laadstroom 0) staat er nu "wordt bewaard" in plaats van "laadt van het
+  net", en er staat hoeveel kWh er in totaal van het net geladen wordt en tot welk percentage
+
 ## 0.2.47
 - Fix: "teruggezet, Victron stond op 11 (iets anders veranderde het)" terwijl er niets anders
   meestuurde. De Victron gaat in zelfverbruik (stand 10) zelf naar 11 als de accu op het minimum zit,

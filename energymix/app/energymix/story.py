@@ -39,7 +39,9 @@ def tell(plan: Plan | None, state: State | None, tz: ZoneInfo) -> list[str]:
 
     # Accu nu
     if state.soc is not None:
-        if cur.ess_state == ESS_KEEP_CHARGED:
+        if cur.ess_state == ESS_KEEP_CHARGED and cur.dvcc_current == 0:
+            out.append(f"De accu ({state.soc:.0f}%) wordt bewaard (niet laden, niet ontladen): {cur.reasons.get('ess', '')}.")
+        elif cur.ess_state == ESS_KEEP_CHARGED:
             out.append(f"De accu ({state.soc:.0f}%) laadt van het net: {cur.reasons.get('ess', '')}.")
         elif cur.setpoint_w is not None and cur.setpoint_w < 0:
             out.append(f"De accu ({state.soc:.0f}%) levert {abs(cur.setpoint_w) / 1000:.1f} kW terug: {cur.reasons.get('setpoint', '')}.")
@@ -70,10 +72,16 @@ def tell(plan: Plan | None, state: State | None, tz: ZoneInfo) -> list[str]:
 
     # Komende accu-acties
     upcoming = [s for s in plan.slots if s.start > cur.start]
-    ch = next((s for s in upcoming if s.ess_state == ESS_KEEP_CHARGED), None)
+    ch = next((s for s in upcoming if s.ess_state == ESS_KEEP_CHARGED and s.grid_charge_kwh > 0), None)
     ex = next((s for s in upcoming if s.setpoint_w is not None and s.setpoint_w < 0), None)
-    if ch and cur.ess_state != ESS_KEEP_CHARGED:
-        out.append(f"Om {_t(ch.start, tz, now)} wordt de accu goedkoop bijgeladen ({_eur(ch.price)}).")
+    ahead = [cur] + upcoming
+    kwh = sum(s.grid_charge_kwh for s in ahead)
+    top = max((s.soc for s in ahead if s.soc is not None), default=None)
+    extra = (f", in totaal {kwh:.0f} kWh" + (f" tot ±{top:.0f}%" if top is not None else "")) if kwh >= 1 else ""
+    if ch and not (cur.ess_state == ESS_KEEP_CHARGED and cur.grid_charge_kwh > 0):
+        out.append(f"Om {_t(ch.start, tz, now)} wordt de accu goedkoop bijgeladen ({_eur(ch.price)}){extra}.")
+    elif extra:
+        out.append(f"In totaal gepland: {kwh:.0f} kWh van het net" + (f", tot ±{top:.0f}%." if top is not None else "."))
     if ex:
         out.append(f"Om {_t(ex.start, tz, now)} is de prijs {_eur(ex.price)}: dan levert de accu terug.")
     s = plan.summary

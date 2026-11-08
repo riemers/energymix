@@ -1041,6 +1041,17 @@ def _plan_battery(cfg, tz, now, slots, plans: list[SlotPlan], state: State, fc: 
         if allow_hold:
             cutoffs += sorted({levels[int(len(levels) * f)] for f in (0.3, 0.4, 0.5, 0.6, 0.7, 0.8)})
         min_run = timedelta(minutes=HOLD_MIN_MINUTES)
+        # Ook laden óm terug te leveren: goedkoop laden, bewaren, en in de duurste uren
+        # terugleveren. Eén stap tegelijk vindt dat nooit: laden zonder geplande teruglevering
+        # levert alleen eigen gebruik op, en terugleveren zonder lading kan niet. Daarom hier ook
+        # varianten met teruglevering in de duurste K kwartieren.
+        export_sets: list[list[int]] = [[]]
+        if export_idx:
+            dearest = sorted(export_idx, key=lambda k: (-plans[k].sell_price, k))
+            for count in (4, 8, 12, 16, 24):
+                if count > len(dearest):
+                    break
+                export_sets.append(dearest[:count])
         for d in cutoffs:
             hold_try = [False] * n
             if d is not None:
@@ -1067,31 +1078,62 @@ def _plan_battery(cfg, tz, now, slots, plans: list[SlotPlan], state: State, fc: 
                         break
                     gc_try[k] = min(step_charge[k], left)
                     left -= gc_try[k]
-                gc[:], hold[:] = gc_try, hold_try
-                sim = simulate()
-                touched = [k for k in range(n) if gc_try[k] > EPS or hold_try[k]]
-                applied = sum(max(0.0, sim.imp[k] - cur.imp[k]) for k in touched)
-                gain = cur_total - total(sim)
-                if applied > EPS and gain > 0.01:
-                    per_kwh = gain / applied
-                    threshold = cfg.arbitrage_min_spread
-                    if via_export(sim, set(touched), applied):
-                        threshold = max(threshold, cfg.export_min_spread)
-                    if per_kwh > threshold and (seed_best is None or gain > seed_best[1]):
-                        seed_best = (per_kwh, gain, gc_try, hold_try, sim)
-                    elif seed_best is None or seed_best[0] <= threshold:
-                        # Niet goed genoeg: onthouden voor de uitleg waarom er niet geladen wordt
-                        if seed_best is None or per_kwh > seed_best[0]:
-                            seed_best = (per_kwh, gain, None, None, None)
-        gc[:], hold[:] = [0.0] * n, [False] * n
+                for ex_set in export_sets:
+                    ex_try = [0.0] * n
+                    for k in ex_set:
+                        if not hold_try[k] and gc_try[k] <= EPS:
+                            ex_try[k] = export_cap[k]
+                    gc[:], hold[:], ex[:] = gc_try, hold_try, ex_try
+                    sim = simulate()
+                    if not ex_set:
+                        no_export = sim
+                    else:
+                        # De teruglevering zelf moet ook de drempel voor terugleveren halen,
+                        # anders verkoopt hij bestaande lading bij een klein prijsverschil
+                        sold = sum(sim.exp) - sum(no_export.exp)
+                        if sold <= EPS or (total(no_export) - total(sim)) / sold <= cfg.export_min_spread:
+                            continue
+                    touched = [k for k in range(n) if gc_try[k] > EPS or hold_try[k]]
+                    applied = sum(max(0.0, sim.imp[k] - cur.imp[k]) for k in touched)
+                    gain = cur_total - total(sim)
+                    if applied > EPS and gain > 0.01:
+                        per_kwh = gain / applied
+                        threshold = cfg.arbitrage_min_spread
+                        if via_export(sim, set(touched), applied):
+                            threshold = max(threshold, cfg.export_min_spread)
+                        if per_kwh > threshold and (seed_best is None or seed_best[2] is None or gain > seed_best[1]):
+                            seed_best = (per_kwh, gain, gc_try, hold_try, sim, ex_try)
+                        elif seed_best is None or seed_best[2] is None:
+                            # Niet goed genoeg: onthouden voor de uitleg waarom er niet geladen wordt
+                            if seed_best is None or per_kwh > seed_best[0]:
+                                seed_best = (per_kwh, gain, None, None, None, None)
+        gc[:], hold[:], ex[:] = [0.0] * n, [False] * n, [0.0] * n
         if seed_best and seed_best[2] is not None:
-            per_kwh, _, gc_try, hold_try, sim = seed_best
-            gc[:], hold[:] = gc_try, hold_try
+            per_kwh, _, gc_try, hold_try, sim, ex_try = seed_best
+            gc[:], hold[:], ex[:] = gc_try, hold_try, ex_try
+            # Teruglevering die niets oplevert (geen lading boven de reserve) niet meenemen
+            seed_total = total(sim)
+            for k in range(n):
+                if ex[k] > EPS:
+                    keep = ex[k]
+                    ex[k] = 0.0
+                    sim_k = simulate()
+                    if total(sim_k) <= seed_total + 0.001:
+                        sim, seed_total = sim_k, total(sim_k)
+                    else:
+                        ex[k] = keep
             # Waar wordt de energie gebruikt? Het slot dat het meest goedkoper wordt.
             touched = {k for k in range(n) if gc[k] > EPS or hold[k]}
             diffs = [(cur.cost[j] - sim.cost[j], j) for j in range(n) if j not in touched]
             j = max(diffs)[1] if diffs else None
             use = f"bespaart om {_fmt(plans[j].start, tz, now)} (€{plans[j].price:.3f})" if j is not None else "bespaart later"
+            sold = [k for k in range(n) if ex[k] > EPS]
+            if sold:
+                top = max(sold, key=lambda k: plans[k].sell_price)
+                use += f", en terugleveren om {_fmt(plans[top].start, tz, now)} (€{plans[top].sell_price:.3f})"
+            for k in sold:
+                export_why[k] = (f"terugleveren à €{plans[k].sell_price:.3f}: goedkoop geladen en bewaard "
+                                 f"voor de duurste uren")
             for k in range(n):
                 if gc[k] > EPS:
                     charge_why[k] = (
