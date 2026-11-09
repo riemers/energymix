@@ -53,7 +53,8 @@ class Executor:
     def live(self, component: str, master: bool = True) -> bool:
         return master and getattr(self.cfg.control, component, False)
 
-    def actions_for(self, sp: SlotPlan, master: bool = True, dvcc: tuple[int | None, str] | None = None) -> list[Action]:
+    def actions_for(self, sp: SlotPlan, master: bool = True, dvcc: tuple[int | None, str] | None = None,
+                    setpoint: tuple[int | None, str] | None = None) -> list[Action]:
         c, r = self.cfg, sp.reasons
         actions: list[Action] = []
         if sp.pv_on is not None:
@@ -67,13 +68,15 @@ class Executor:
             value, why = dvcc if dvcc and dvcc[0] is not None else (sp.dvcc_current, r.get("dvcc", ""))
             actions.append(Action("dvcc", value, self._actual("dvcc"), why, self.live("dvcc", master)))
         if sp.setpoint_w is not None:
-            actions.append(Action("setpoint", sp.setpoint_w, self._actual("setpoint"), r.get("setpoint", ""), self.live("setpoint", master)))
+            value, why = setpoint if setpoint and setpoint[0] is not None else (sp.setpoint_w, r.get("setpoint", ""))
+            actions.append(Action("setpoint", value, self._actual("setpoint"), why, self.live("setpoint", master)))
         if sp.feed_in_disabled is not None:
             actions.append(Action("feed_in", sp.feed_in_disabled, self._written("feed_in"), r.get("feed_in", ""), self.live("feed_in", master)))
         return actions
 
-    async def apply(self, sp: SlotPlan, master: bool = True, dvcc: tuple[int | None, str] | None = None) -> list[Action]:
-        actions = self.actions_for(sp, master, dvcc)
+    async def apply(self, sp: SlotPlan, master: bool = True, dvcc: tuple[int | None, str] | None = None,
+                    setpoint: tuple[int | None, str] | None = None) -> list[Action]:
+        actions = self.actions_for(sp, master, dvcc, setpoint)
         for a in actions:
             await self._run(a)
         self.last_actions = actions
@@ -84,6 +87,13 @@ class Executor:
         a = Action("dvcc", value, self._actual("dvcc"), reason, self.live("dvcc", master))
         await self._run(a)
         self.last_actions = [x for x in self.last_actions if x.component != "dvcc"] + [a]
+        return a
+
+    async def apply_setpoint(self, value: int, reason: str, master: bool = True) -> Action:
+        """Tussentijdse aanpassing van de teruglevering (Multi's onder hun grens houden)."""
+        a = Action("setpoint", value, self._actual("setpoint"), reason, self.live("setpoint", master))
+        await self._run(a)
+        self.last_actions = [x for x in self.last_actions if x.component != "setpoint"] + [a]
         return a
 
     async def enforce(self, master: bool = True) -> list[Action]:

@@ -27,7 +27,12 @@ from statistics import mean
 from zoneinfo import ZoneInfo
 
 from .config import Config
-from .phases import battery_ac_limit_w, expected_others_a
+from .phases import (
+    battery_ac_limit_w,
+    expected_others_a,
+    export_grid_cap_w,
+    inverter_limit_w,
+)
 from .prices import PriceSlot
 
 ESS_KEEP_CHARGED = 9  # Victron BatteryLife state: "Keep batteries charged"
@@ -896,10 +901,18 @@ def _plan_battery(cfg, tz, now, slots, plans: list[SlotPlan], state: State, fc: 
         ac_limit = battery_ac_limit_w(cfg, expected_others_a(cfg, house_w, car_w, pv_w))
         charge_cap.append(max(0.0, min(charge_w, ac_limit * eff_c)) / 1000 * h)
     max_e = [cap if sp.price < 0 else target_e for sp in plans]
-    export_cap = [
-        (cfg.export_max_w / 1000 * _hours(sp)) if (cfg.export_enabled and sp.car_kwh <= EPS and sp.zappi_mode != "Fast") else 0.0
-        for sp in plans
-    ]
+    # Terugleveren: de Multi's leveren huis + net samen, en mogen samen niet boven hun grens
+    # (een deel van hun continu vermogen, op 100% is het rendement slecht). Verbruikt het huis
+    # op dat moment meer, dan gaat er minder naar het net.
+    inv_w, grid_cap_w = inverter_limit_w(cfg), export_grid_cap_w(cfg)
+    export_cap = []
+    for sp in plans:
+        h = _hours(sp)
+        if not (cfg.export_enabled and sp.car_kwh <= EPS and sp.zappi_mode != "Fast"):
+            export_cap.append(0.0)
+            continue
+        house_from_battery = max(0.0, sp.house_kwh - max(0.0, sp.pv_kwh - sp.car_kwh))
+        export_cap.append(max(0.0, min(grid_cap_w / 1000 * h, inv_w / 1000 * h - house_from_battery)))
     # Waarde van energie die aan het eind nog in de accu zit: wat die later bespaart
     # (goedkope prijs, na ontlaadverlies). Voorzichtig gerekend, anders lijkt "bewaren"
     # tot na de planning altijd winst en gaat hij 's nachts zonder reden bewaren.
@@ -1541,7 +1554,7 @@ def _plan_battery(cfg, tz, now, slots, plans: list[SlotPlan], state: State, fc: 
             else:
                 sp.reasons["ess"] = f"zelfverbruik (€{sp.price:.3f})"
         if ex[i] > EPS and cur.exp[i] > EPS:
-            w = min(cfg.export_max_w, ex[i] / h * 1000) if h else cfg.export_max_w
+            w = min(export_cap[i], ex[i]) / h * 1000 if h else export_grid_cap_w(cfg)
             sp.setpoint_w = -int(round(w / 100) * 100)
             sp.feed_in_disabled = 0
             sp.reasons["setpoint"] = export_why.get(i, "terugleveren")

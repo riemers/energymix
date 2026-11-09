@@ -105,7 +105,10 @@ class Config:
     grid_max_import_w: float = 17000
     grid_margin_w: float = 1500
     zappi_max_w: float = 11000
-    export_max_w: float = 4000
+    export_max_w: float = 0  # grens op wat naar het net gaat (W); 0 = alleen de grens van de omvormers
+    # Totaal wat de Multi's mogen leveren bij terugleveren (huis + net), als % van hun continu
+    # vermogen (MultiPlus-II 48/5000: 4000 W per stuk). Op 100% zakt het rendement en worden ze heet.
+    inverter_load_pct: float = 80
     grid_setpoint_default_w: float = 50
 
     # Accu

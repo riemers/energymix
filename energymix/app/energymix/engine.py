@@ -21,7 +21,7 @@ from .ha import HomeAssistant
 from .phases import headroom_a, victron_phase_idx
 from .planner import CarState, Forecast, Plan, State, floor_pct, make_plan, plan_floor_pct
 from .prices import PriceSlot, slot_at
-from .regulator import Regulator
+from .regulator import ExportRegulator, Regulator
 from .store import Store
 from .story import tell
 from .tibber import fetch_prices
@@ -46,6 +46,7 @@ class Engine:
         )
         self.executor = Executor(cfg, self.ha, self.victron, store)
         self.regulator = Regulator(cfg)
+        self.export_regulator = ExportRegulator(cfg)
         self.learner = CarLearner(store)
         self.car_entities: dict[str, dict[str, str]] = {}
         self.prices: list[PriceSlot] = []
@@ -291,7 +292,7 @@ class Engine:
             log.warning("Aansturen uitgezet: Victron terug naar standaardwaarden")
             await self.executor.restore_defaults("Aansturen uitgezet")
         self.executor.cfg = self.cfg
-        self.regulator.cfg = self.cfg
+        self.regulator.cfg = self.export_regulator.cfg = self.cfg
 
     def effective(self, cfg: Config) -> Config:
         """Vul "auto"-waarden in met wat de installatie zelf meldt."""
@@ -341,7 +342,7 @@ class Engine:
         self.store.save_plan(self.plan.to_dict(), asdict(self.state))
         if self.plan.now and self.ha.connected.is_set():
             dvcc = self.regulator.step(self.plan.now, self.state)
-            await self.executor.apply(self.plan.now, self.master, dvcc)
+            await self.executor.apply(self.plan.now, self.master, dvcc, self._export_step())
             try:
                 await self.publish()
             except Exception as e:  # noqa: BLE001
@@ -357,7 +358,7 @@ class Engine:
             eff = self.effective(helpers.apply_overrides(self.base_cfg, self.helper_values))
             if eff.victron_phases != self.cfg.victron_phases:
                 log.info("Victron laadt op fase(s) %s (uit de Multi's)", eff.victron_phases)
-                self.cfg = self.executor.cfg = self.regulator.cfg = eff
+                self.cfg = self.executor.cfg = self.regulator.cfg = self.export_regulator.cfg = eff
         self.state = self.collect()
         if self.cfg.car_boost:
             before = self.cfg.car_boost
@@ -379,8 +380,17 @@ class Engine:
             value, why = self.regulator.step(self.plan.now, self.state)
             if value is not None and value != self.executor._last_desired.get("dvcc"):
                 await self.executor.apply_dvcc(value, why, self.master)
+            sp_value, sp_why = self._export_step()
+            if sp_value is not None and sp_value != self.executor._last_desired.get("setpoint"):
+                await self.executor.apply_setpoint(sp_value, sp_why, self.master)
             # Iets anders (Node-RED?) kan de Victron terugzetten: niet een kwartier wachten
             await self.executor.enforce(self.master)
+
+    def _export_step(self) -> tuple[int | None, str]:
+        """Teruglevering bijregelen op wat de Multi's nu werkelijk leveren (huis telt mee)."""
+        out = getattr(self.victron, "inverter_output_w", None)
+        total, phases = out() if out else (None, [])
+        return self.export_regulator.step(self.plan.now if self.plan else None, total, phases)
 
     async def run(self) -> None:
         asyncio.create_task(self.ha.run())
@@ -422,7 +432,7 @@ class Engine:
         try:
             await helpers.set_helper(self.ha, "car_charge", "auto")
             self.helper_values["car_charge"] = "auto"
-            self.cfg = self.executor.cfg = self.regulator.cfg = self.effective(
+            self.cfg = self.executor.cfg = self.regulator.cfg = self.export_regulator.cfg = self.effective(
                 helpers.apply_overrides(self.base_cfg, self.helper_values)
             )
         except Exception as e:  # noqa: BLE001
@@ -538,6 +548,7 @@ class Engine:
             "sources": self.sources,
             "victron_connected": self.victron.connected,
             "regulator": reg,
+            "export_regulator": self.export_regulator.to_dict(),
             "victron_overrides": self.executor.overrides[-5:],
             "victron_ess": self.victron.setting("ess"),
             "battery": self.battery_live(st),
