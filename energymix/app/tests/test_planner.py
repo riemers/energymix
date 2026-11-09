@@ -472,7 +472,7 @@ def test_battery_runway_sun_refills():
 def _reserve_case(reserve):
     prices = quarters(at(15, day=5), [0.40] * 36 + [0.36] * 16 + [0.33] * 58 + [0.566] * 8 + [0.35] * 18)
     pv = {s.start: (0.6 if 10 <= s.start.astimezone(TZ).hour < 16 and s.start.day == 6 else 0.0) for s in prices}
-    return make_plan(cfg(house_load_default_w=600, export_enabled=True, battery_reserve_soc=reserve, grid_charge_enabled=False, hold_enabled=True),
+    return make_plan(cfg(house_load_default_w=600, export_enabled=True, export_max_w=4000, victron_phases="1,2,3", battery_reserve_soc=reserve, grid_charge_enabled=False, hold_enabled=True),
                      prices, State(soc=80), at(15, 5, day=5), Forecast(pv_kwh=pv))
 
 
@@ -753,3 +753,32 @@ def test_charges_cheap_to_export_at_expensive_peak():
     assert all(s.setpoint_w < 0 for s in peak)
     night = [s for s in plan.slots if s.price <= 0.40]
     assert any(s.grid_charge_kwh > 0 for s in night)
+
+
+def test_no_charge_for_export_when_spread_barely_pays():
+    # Nacht €0,40, piek €0,50: na 15% verlies kost een kWh uit de accu €0,47. €0,03 winst per kWh
+    # is minder dan de drempel voor terugleveren (€0,15): niet laden om terug te leveren.
+    prices = hourly(at(0), [0.45] * 22 + [0.40, 0.40] + [0.40] * 6 + [0.45] * 10 + [0.50] * 3 + [0.45] * 5)
+    c = cfg(export_enabled=True, hold_enabled=True, battery_reserve_soc=25, house_load_default_w=0)
+    plan = make_plan(c, prices, State(soc=5, min_soc=5), at(22, 5))
+    assert plan.summary["export_kwh"] == 0
+    assert plan.summary["grid_charge_kwh"] == 0
+
+
+def test_export_power_counts_house_load_within_inverter_limit():
+    # 3 Multi's 48/5000 op 80%: samen 9,6 kW. Huis 1 kW in de piek: 8,6 kW naar het net.
+    prices = hourly(at(0), [0.45] * 22 + [0.40, 0.40] + [0.40] * 6 + [0.55] * 10 + [0.85] * 3 + [0.55] * 5)
+    c = cfg(export_enabled=True, hold_enabled=True, battery_reserve_soc=25, house_load_default_w=1000,
+            victron_phases="1,2,3", export_max_w=0)
+    plan = make_plan(c, prices, State(soc=90, min_soc=5), at(22, 5))
+    peak = [s for s in plan.slots if s.price >= 0.85]
+    assert peak and all(s.setpoint_w == -8600 for s in peak)
+
+
+def test_export_max_w_still_caps_grid_export():
+    prices = hourly(at(0), [0.45] * 22 + [0.40, 0.40] + [0.40] * 6 + [0.55] * 10 + [0.85] * 3 + [0.55] * 5)
+    c = cfg(export_enabled=True, battery_reserve_soc=25, house_load_default_w=1000,
+            victron_phases="1,2,3", export_max_w=5000)
+    plan = make_plan(c, prices, State(soc=90, min_soc=5), at(22, 5))
+    peak = [s for s in plan.slots if s.price >= 0.85]
+    assert peak and all(s.setpoint_w == -5000 for s in peak)

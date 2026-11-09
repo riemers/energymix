@@ -21,7 +21,14 @@ import time
 from dataclasses import dataclass, field
 
 from .config import Config
-from .phases import battery_ac_limit_w, headroom_a, victron_phase_idx, zappi_phase_idx
+from .phases import (
+    battery_ac_limit_w,
+    headroom_a,
+    inverter_limit_w,
+    inverter_units,
+    victron_phase_idx,
+    zappi_phase_idx,
+)
 from .planner import SlotPlan, State
 
 RAISE_AFTER = 120  # s ruimte nodig voordat we de stroom verhogen
@@ -158,3 +165,71 @@ class Regulator:
         st.current_a = new
         st.reason = f"{new} A (plan {plan_a} A, max {ceiling} A), {why}"
         return new, st.reason
+
+
+EXPORT_STEP_W = 100  # setpoint in stappen van 100 W
+EXPORT_RAISE_W = 300  # pas omhoog als er minstens zoveel ruimte is (geen gefriemel)
+
+
+class ExportRegulator:
+    """Terugleveren: de Multi's leveren huis + net samen, en blijven onder hun grens.
+
+    Het plan zegt hoeveel er naar het net gaat, met een schatting van het huisverbruik.
+    Verbruikt het huis meer (of de auto gaat laden), dan levert de Victron dat er gewoon
+    bovenop. Daarom kijken we elke `regulator_seconds` wat de Multi's werkelijk leveren,
+    in totaal en per fase, en schuiven de teruglevering zo dat ze onder de grens blijven.
+    Nooit meer dan het plan.
+    """
+
+    def __init__(self, cfg: Config):
+        self.cfg = cfg
+        self.export_w: int | None = None
+        self.reason = ""
+        self.output_w: float | None = None
+
+    def reset(self) -> None:
+        self.export_w, self.reason, self.output_w = None, "", None
+
+    def step(self, slot: SlotPlan | None, output_w: float | None,
+             phase_w: list[float | None] | None = None) -> tuple[int | None, str]:
+        """Gewenste setpoint nu (negatief = terugleveren), of None als het plan gewoon geldt."""
+        if slot is None or slot.setpoint_w is None or slot.setpoint_w >= 0:
+            self.reset()
+            return None, ""
+        cfg = self.cfg
+        planned = -slot.setpoint_w
+        limit = inverter_limit_w(cfg)
+        units = inverter_units(cfg)
+        base = slot.reasons.get("setpoint", "terugleveren")
+        self.output_w = output_w
+        if output_w is None:
+            self.export_w = planned
+            self.reason = base
+            return slot.setpoint_w, base
+        cur = self.export_w if self.export_w is not None else planned
+        room = limit - output_w
+        why = f"Multi's leveren {output_w / 1000:.1f} kW van max {limit / 1000:.1f} kW"
+        phases = [p for p in (phase_w or []) if p is not None]
+        if units > 1 and len(phases) == units:
+            per = limit / units
+            tight = max(range(units), key=lambda k: phases[k])
+            # Teruglevering gaat over de fases verdeeld: per kW minder zakt elke fase 1/units kW
+            phase_room = units * (per - phases[tight])
+            if phase_room < room:
+                room = phase_room
+                why = f"Multi op L{tight + 1} levert {phases[tight] / 1000:.1f} kW van max {per / 1000:.1f} kW"
+        if room < 0 or room >= EXPORT_RAISE_W:
+            new = cur + room
+        else:
+            new = cur
+        new = int(max(0.0, min(planned, new)) // EXPORT_STEP_W * EXPORT_STEP_W)
+        self.export_w = new
+        if new < planned:
+            self.reason = f"{base}; {new / 1000:.1f} kW i.p.v. {planned / 1000:.1f} kW: {why}"
+        else:
+            self.reason = base
+        return -new, self.reason
+
+    def to_dict(self) -> dict:
+        return {"export_w": self.export_w, "output_w": round(self.output_w) if self.output_w is not None else None,
+                "limit_w": round(inverter_limit_w(self.cfg)), "reason": self.reason}

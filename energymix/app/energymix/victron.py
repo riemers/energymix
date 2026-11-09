@@ -88,6 +88,9 @@ class Victron:
             # AC-kant van de Multi's: voor het gemeten rendement heen en terug
             f"N/{p}/vebus/{self.vebus}/Ac/ActiveIn/P",
             f"N/{p}/vebus/{self.vebus}/Ac/Out/P",
+            # Per fase: wat elke Multi levert (voor de grens bij terugleveren)
+            f"N/{p}/vebus/{self.vebus}/Ac/ActiveIn/+/P",
+            f"N/{p}/vebus/{self.vebus}/Ac/Out/+/P",
             f"N/{p}/vebus/{self.vebus}/Energy/+",
             # Alle accu's/monitoren die de GX kent (Lynx Shunt, BMS, ...)
             f"N/{p}/battery/+/Soc",
@@ -165,6 +168,16 @@ class Victron:
         a = self.get(f"vebus/{self.vebus}/Ac/ActiveIn/P")
         o = self.get(f"vebus/{self.vebus}/Ac/Out/P")
         return a - o if a is not None and o is not None else None
+
+    def inverter_output_w(self) -> tuple[float | None, list[float | None]]:
+        """Wat de Multi's nu leveren (+) of opnemen (-): totaal en per fase (uitgang min ingang)."""
+        a = self.inverter_ac_w()
+        phases = []
+        for i in (1, 2, 3):
+            pi = self.get(f"vebus/{self.vebus}/Ac/ActiveIn/L{i}/P")
+            po = self.get(f"vebus/{self.vebus}/Ac/Out/L{i}/P")
+            phases.append(po - pi if pi is not None and po is not None else None)
+        return (-a if a is not None else None), phases
 
     def inverter_energy_kwh(self) -> tuple[float | None, float | None]:
         """Tellers van de Multi's (kWh): van AC naar de omvormer, en van de omvormer naar AC.

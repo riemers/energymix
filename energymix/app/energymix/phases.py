@@ -53,3 +53,29 @@ def expected_others_a(cfg: Config, house_w: float, car_w: float, pv_w: float = 0
     for p in zp:
         out[p] += car_w / len(zp) / v
     return out
+
+
+# Continu vermogen per Multi bij 25 °C (Victron-datasheet MultiPlus-II 48V, 230V)
+MULTI_CONTINUOUS_W = {"3000": 2400, "5000": 4000}
+
+
+def inverter_units(cfg: Config) -> int:
+    """Aantal Multi's: één per fase waarop de Victron zit."""
+    return max(1, len(victron_phase_idx(cfg)))
+
+
+def inverter_limit_w(cfg: Config) -> float:
+    """Wat de Multi's samen mogen leveren als ze terugleveren: huis + net samen.
+
+    Een percentage van het continu vermogen, zodat ze niet op 100% draaien (slechter rendement,
+    warm, en bij een warme ruimte zakt het continu vermogen al naar 3700 W per stuk).
+    """
+    per = MULTI_CONTINUOUS_W.get(str(cfg.victron_multi_va), MULTI_CONTINUOUS_W["5000"])
+    pct = cfg.inverter_load_pct if 0 < cfg.inverter_load_pct <= 100 else 80
+    return inverter_units(cfg) * per * pct / 100
+
+
+def export_grid_cap_w(cfg: Config) -> float:
+    """Losse grens op teruglevering aan het net (0 = geen, dan alleen de omvormergrens)."""
+    lim = inverter_limit_w(cfg)
+    return min(lim, cfg.export_max_w) if cfg.export_max_w and cfg.export_max_w > 0 else lim

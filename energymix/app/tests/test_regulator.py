@@ -135,3 +135,53 @@ def test_solar_export_counts_as_room():
 
     # L1 levert 6.8 A terug door de zon: dat is extra ruimte (de zekering ziet netto)
     assert headroom_a(cfg(), [-6.8, 5, 0]) == [29.8, 18, 23]
+
+
+# ------------------------------------------------------------------ terugleveren
+
+from energymix.regulator import ExportRegulator
+
+
+def export_slot(w=-8600):
+    return SlotPlan(NOW, NOW + timedelta(minutes=15), 0.85, setpoint_w=w, reasons={"setpoint": "terugleveren"})
+
+
+def ecfg(**kw):
+    return cfg(victron_phases="1,2,3", victron_multi_va="5000", inverter_load_pct=80, **kw)
+
+
+def test_export_follows_plan_while_multis_have_room():
+    r = ExportRegulator(ecfg())
+    assert r.step(export_slot(), 9500, [3200, 3150, 3150])[0] == -8600
+
+
+def test_export_drops_when_house_uses_more_than_expected():
+    r = ExportRegulator(ecfg())
+    # Oven aan: Multi's leveren samen 11 kW, grens 9,6 kW -> 1,4 kW minder terug
+    value, why = r.step(export_slot(), 11000, [3650, 3650, 3650])
+    assert value == -7200 and "i.p.v. 8.6 kW" in why
+
+
+def test_export_drops_when_one_phase_is_over_its_multi():
+    r = ExportRegulator(ecfg())
+    # Totaal net onder de grens, maar L2 (oven) levert 4,0 kW van max 3,2 kW -> 3 x 0,8 kW minder
+    value, why = r.step(export_slot(), 9400, [2700, 4000, 2700])
+    assert value == -6200 and "L2" in why
+
+
+def test_export_never_above_plan_and_rises_again():
+    r = ExportRegulator(ecfg())
+    assert r.step(export_slot(), 11000, [None, None, None])[0] == -7200
+    # Oven uit: weer ruimte, terug naar het plan maar niet erboven
+    assert r.step(export_slot(), 7700, [None, None, None])[0] == -8600
+
+
+def test_export_keeps_value_on_small_room():
+    r = ExportRegulator(ecfg())
+    r.step(export_slot(), 11000, None)  # -> 7200
+    assert r.step(export_slot(), 9400, None)[0] == -7200  # 200 W ruimte: laten staan
+
+
+def test_no_export_slot_means_plan_value():
+    r = ExportRegulator(ecfg())
+    assert r.step(export_slot(50), 500, None) == (None, "")

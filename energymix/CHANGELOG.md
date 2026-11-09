@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.2.49
+- Terugleveren: de grens geldt nu voor wat de Multi's samen leveren (huis + net), niet alleen voor
+  wat naar het net gaat. Nieuwe instelling "Multi's bij terugleveren max belasten" (standaard 80% van
+  het continu vermogen: bij 3x MultiPlus-II 48/5000 is dat 3 x 3200 = 9,6 kW). Verbruikt het huis op
+  dat moment 1 kW, dan gaat er 8,6 kW naar het net
+- Tijdens terugleveren kijkt de add-on elke halve minuut wat de Multi's werkelijk leveren, in totaal en
+  per fase. Gaat het huis (of één fase, bv. de oven) meer trekken, dan levert hij minder terug zodat
+  geen enkele Multi boven de grens komt; daarna weer omhoog, nooit boven het plan
+- "Max terugleveren aan het net" is nu een losse extra grens; op 0 (nieuwe standaard) geldt alleen de
+  grens van de Multi's
+- Laden om terug te leveren gebeurt alleen als het na laad- en ontlaadverlies minstens
+  "Min. winst terugleveren" (standaard €0,15/kWh) oplevert; test erbij die dat vastlegt
+
 ## 0.2.48
 - Fix: laden óm terug te leveren werd nooit gepland. Bij nacht €0,40 en morgen een piek van €0,85
   laadde de accu alleen wat het huis morgen zelf nodig heeft. Stap voor stap zag de planner de winst

@@ -104,6 +104,12 @@ goedkoopste uren: morgen als dat goedkoper is en er genoeg uren zijn, anders van
 
 **Terugleveren.** Alleen als de schakelaar aan staat, het verschil na verliezen minstens
 `export_min_spread` per kWh is, de auto niet laadt, en nooit onder de reserve.
+Hoeveel er tegelijk terug kan hangt af van de Multi's: die leveren huis en net samen. Ze worden
+maximaal tot "Multi's bij terugleveren max belasten" (standaard 80% van het continu vermogen, bij
+een MultiPlus-II 48/5000 is dat 3200 W per stuk) belast, want op 100% is het rendement slechter en
+worden ze warm. Wat het huis gebruikt gaat daarvan af. Tijdens het terugleveren regelt de add-on elke
+`regulator_seconds` bij op wat de Multi's werkelijk leveren, ook per fase. "Max terugleveren aan het
+net" is een losse extra grens (0 = geen).
 
 **Bewaren (schakelaar, standaard uit).** In een goedkoop uur kan het voordeliger zijn om het huis van het net te laten draaien
 en de accu te sparen voor de dure avond (vooral in de winter, als de nacht goedkoop is). Energymix
