@@ -3,6 +3,9 @@ export const eur = (v: number, digits = 3) => `${v < 0 ? "−" : ""}€${Math.ab
 export const time = (iso: string, tz?: string) =>
   new Date(iso).toLocaleTimeString("nl-NL", { hour: "2-digit", minute: "2-digit", timeZone: tz });
 
+export const timeSec = (iso: string, tz?: string) =>
+  new Date(iso).toLocaleTimeString("nl-NL", { hour: "2-digit", minute: "2-digit", second: "2-digit", timeZone: tz });
+
 export const dayTime = (iso: string, tz?: string) =>
   new Date(iso).toLocaleString("nl-NL", { weekday: "short", hour: "2-digit", minute: "2-digit", timeZone: tz });
 

@@ -30,6 +30,9 @@ from .victron import Victron
 log = logging.getLogger(__name__)
 
 SAMPLE_SECONDS = 60
+# Live waarden voor het dashboard: HA en de Victron sturen hun metingen direct door,
+# dus de toestand vaker opnieuw opbouwen dan de regelaar (die blijft op regulator_seconds)
+LIVE_SECONDS = 2
 PUBLISH_PREFIX = "energymix"
 PRICE_RETRY_AFTER_13 = 300  # s tussen pogingen zolang de prijzen van morgen ontbreken
 
@@ -65,6 +68,7 @@ class Engine:
         self._last_sample = 0.0
         self.sources: dict[str, str] = {}
         self._soc_warned = False
+        self.state_at: datetime | None = None
         self._master_seen = False
         self._boost_plugged = False
         self.ha.on_change(self._on_ha_change)
@@ -360,6 +364,7 @@ class Engine:
                 log.info("Victron laadt op fase(s) %s (uit de Multi's)", eff.victron_phases)
                 self.cfg = self.executor.cfg = self.regulator.cfg = self.export_regulator.cfg = eff
         self.state = self.collect()
+        self.state_at = datetime.now(timezone.utc)
         if self.cfg.car_boost:
             before = self.cfg.car_boost
             await self._boost_auto_off()
@@ -396,6 +401,7 @@ class Engine:
         asyncio.create_task(self.ha.run())
         asyncio.create_task(self.victron.run())
         asyncio.create_task(self._fast_loop())
+        asyncio.create_task(self._live_loop())
         try:
             await asyncio.wait_for(self.ha.connected.wait(), 20)
         except asyncio.TimeoutError:
@@ -454,6 +460,20 @@ class Engine:
             except Exception:  # noqa: BLE001
                 log.exception("Snelle lus mislukt")
             await asyncio.sleep(max(5, self.cfg.regulator_seconds))
+
+    async def _live_loop(self) -> None:
+        """Alleen de live toestand verversen (geen sturing), zodat het dashboard bijblijft."""
+        while True:
+            await asyncio.sleep(LIVE_SECONDS)
+            try:
+                self.refresh_live()
+            except Exception:  # noqa: BLE001
+                log.exception("Live verversen mislukt")
+
+    def refresh_live(self) -> None:
+        if self.ha.connected.is_set():
+            self.state = self.collect()
+            self.state_at = datetime.now(timezone.utc)
 
     def _seconds_to_next_tick(self) -> float:
         step = self.cfg.interval_minutes * 60
@@ -538,6 +558,7 @@ class Engine:
             reg["phase_free_a"] = [round(x, 1) for x in headroom_a(self.cfg, others)]
         return {
             "ts": datetime.now(timezone.utc).isoformat(),
+            "state_at": self.state_at.isoformat() if self.state_at else None,
             "soc": st.soc, "pv_w": st.pv_w, "grid_w": st.grid_w, "battery_w": st.battery_w,
             "house_w": st.house_w, "zappi_w": st.zappi_w, "zappi_mode": st.zappi_mode,
             "zappi_status": st.zappi_status, "zappi_plug": st.zappi_plug, "cars": cars,

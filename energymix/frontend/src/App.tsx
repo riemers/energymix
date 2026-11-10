@@ -3,7 +3,7 @@ import { getDecisions, getLive, getStats, getStatus, replan } from "./api";
 import Controls from "./Controls";
 import Flow from "./Flow";
 import Phases from "./Phases";
-import { COMPONENTS, LEVELS, dayTime, eur, relDay, slotColor, time, valueLabel, watt } from "./format";
+import { COMPONENTS, LEVELS, dayTime, eur, relDay, slotColor, time, timeSec, valueLabel, watt } from "./format";
 import { ICONS, Refresh } from "./icons";
 import Settings from "./Settings";
 import Stats from "./Stats";
@@ -50,16 +50,27 @@ export default function App() {
     }
   }, []);
 
+  // Plan en acties: elke 30 s (het plan zelf verandert hooguit elk kwartier of na een wijziging)
   useEffect(() => {
     load();
-    const t = setInterval(load, 30_000);
-    return () => clearInterval(t);
+    const t = setInterval(() => !document.hidden && load(), 30_000);
+    const onVisible = () => !document.hidden && load();
+    document.addEventListener("visibilitychange", onVisible);
+    return () => {
+      clearInterval(t);
+      document.removeEventListener("visibilitychange", onVisible);
+    };
   }, [load]);
 
-  // Live stroom: elke 3 s
+  // Live stroom: elke 2 s, niet als het tabblad op de achtergrond staat
   useEffect(() => {
-    const t = setInterval(() => getLive().then(setLive).catch(() => undefined), 3000);
-    return () => clearInterval(t);
+    const tick = () => !document.hidden && getLive().then(setLive).catch(() => undefined);
+    const t = setInterval(tick, 2000);
+    document.addEventListener("visibilitychange", tick);
+    return () => {
+      clearInterval(t);
+      document.removeEventListener("visibilitychange", tick);
+    };
   }, []);
 
   useEffect(() => {
@@ -170,7 +181,7 @@ function Overview({ status, live, onStatus }: { status: Status; live: Live; onSt
   return (
     <div className="space-y-4">
       <div className="grid gap-4 lg:grid-cols-12">
-        <Card className="flex flex-col lg:col-span-7" title="Nu" right={<span className="text-[11px] text-slate-500">live · {time(live.ts, tz)}</span>}>
+        <Card className="flex flex-col lg:col-span-7" title="Nu" right={<span className="text-[11px] text-slate-500">live · {timeSec(live.state_at ?? live.ts, tz)}</span>}>
           <div className="grid flex-1 place-items-center">
             <Flow live={live} />
           </div>

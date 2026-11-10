@@ -251,3 +251,18 @@ async def test_override_reason_does_not_pile_up(tmp_path):
         ex._last_written = {k: (val, 0) for k, (val, _) in ex._last_written.items()}
         done = await ex.enforce()
     assert done[0].reason == "teruggezet, Victron stond op 10 (iets anders veranderde het): laden van het net"
+
+
+def test_live_refresh_follows_ha_without_regulator(tmp_path):
+    """Het dashboard ziet nieuwe metingen binnen een paar seconden, los van de regelaar."""
+    from energymix.engine import Engine
+
+    e = Engine(Config(pv_power_entity="sensor.pv"), None, Store(tmp_path / "t.db"))
+    e.ha.connected.set()
+    e.ha.states = {"sensor.pv": {"state": "1200", "attributes": {"unit_of_measurement": "W"}}}
+    e.refresh_live()
+    assert e.live()["pv_w"] == 1200 and e.live()["state_at"]
+    e.ha.states["sensor.pv"]["state"] = "3400"
+    e.refresh_live()
+    assert e.live()["pv_w"] == 3400
+    assert e.executor._last_desired.get("dvcc") is None  # niets aangestuurd
