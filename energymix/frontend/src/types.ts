@@ -146,6 +146,7 @@ export interface LiveCar {
 
 export interface Live {
   ts: string;
+  state_at?: string | null;
   soc: number | null;
   pv_w: number | null;
   grid_w: number | null;

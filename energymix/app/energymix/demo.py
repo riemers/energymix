@@ -172,7 +172,7 @@ async def main() -> None:
                 s["sensor.grid_l1"]["state"] = f"{base + max(batt, 0) / 230 + zw / 3 / 230:.1f}"
                 s["sensor.grid_l2"]["state"] = f"{base + 13 + random.uniform(-0.5, 0.5) + zw / 3 / 230:.1f}"
                 s["sensor.grid_l3"]["state"] = f"{base + 1.5 + zw / 3 / 230:.1f}"
-                await asyncio.sleep(3)
+                await asyncio.sleep(2)
 
         asyncio.create_task(wiggle())
         await engine.cycle()
@@ -181,6 +181,7 @@ async def main() -> None:
         await web.TCPSite(runner, "0.0.0.0", int(os.environ.get("PORT", 8099))).start()
         print("Demo op http://localhost:8099")
         asyncio.create_task(engine._fast_loop())
+        asyncio.create_task(engine._live_loop())
         await asyncio.Event().wait()
 
 

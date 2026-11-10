@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.2.50
+- Dashboard "Nu" ververst sneller: de live waarden (zon, net, accu, huis, fases) werden maar eens per
+  `regulator_seconds` (standaard 30 s) opnieuw uitgelezen, ook al vroeg het scherm elke 3 s. Nu leest
+  de add-on de metingen elke 2 s opnieuw uit Home Assistant en de Victron, en vraagt het scherm ze elke
+  2 s op. De regelaar en het aansturen van de Victron blijven op hun eigen tempo
+- Bij "live" staat nu de tijd van de meting, met seconden, zodat je ziet dat hij bijblijft
+- Op een tabblad op de achtergrond vraagt het dashboard niets op; terug op het tabblad ververst hij direct
+
 ## 0.2.49
 - Terugleveren: de grens geldt nu voor wat de Multi's samen leveren (huis + net), niet alleen voor
   wat naar het net gaat. Nieuwe instelling "Multi's bij terugleveren max belasten" (standaard 80% van
