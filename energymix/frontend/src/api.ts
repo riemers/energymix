@@ -1,4 +1,4 @@
-import type { Decision, EntityOption, Live, Settings, Stats, Status } from "./types";
+import type { Decision, EntityOption, Live, Review, Settings, Stats, Status } from "./types";
 
 // Relatieve paden: werkt zowel achter HA Ingress als rechtstreeks
 async function get<T>(path: string): Promise<T> {
@@ -26,3 +26,4 @@ export const saveSettings = (changes: Record<string, unknown>) => post<Settings>
 export const setHelper = (key: string, value: unknown) => post<Status>("api/helper", { key, value });
 export const replan = () => post<Status>("api/replan");
 export const searchEntities = (q: string) => get<EntityOption[]>(`api/entities?q=${encodeURIComponent(q)}`);
+export const getReview = (day?: string) => get<Review>(`api/review${day ? `?day=${day}` : ""}`);

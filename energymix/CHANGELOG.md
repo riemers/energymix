@@ -11,6 +11,11 @@
   in de accu-balk zelf een dun streepje met die verdeling
 - De reden per kwartier ("bespaart om 09:00") noemde maar één moment, ook als de stroom eigenlijk voor
   na de bekende prijzen was; nu staat daar de echte verdeling
+- Nieuw blok "Terugblik: plan en werkelijkheid" op het overzicht, per dag (gisteren, vandaag, terug
+  bladeren): het echte accu-% naast wat het plan van 00:00 verwachtte, en onderin wat de accu echt deed
+  (laden/ontladen) met de geplande blokken erachter. Erboven: wat de accu die dag opleverde (wat het
+  net zonder accu gekost had min wat het kostte, plus het verschil in accu-inhoud), hoeveel kWh geladen
+  en ontladen en tegen welke gemiddelde prijs
 
 ## 0.2.52
 - "Accu-inhoud na de bekende prijzen waarderen: zoals de afgelopen week" laadt niet meer vol voor een

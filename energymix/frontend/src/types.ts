@@ -383,3 +383,36 @@ export interface EntityOption {
   state: string;
   unit: string | null;
 }
+
+export interface ReviewSlot {
+  start: string;
+  end: string;
+  price: number | null;
+  soc: number | null;
+  grid_kwh: number | null;
+  battery_kwh: number | null;
+  plan_soc: number | null;
+  plan_kind: "charge" | "hold" | "export" | null;
+}
+
+export interface Review {
+  day: string;
+  today: string;
+  slots: ReviewSlot[];
+  plan: { created_at: string; saving_eur: number | null } | null;
+  measured_minutes: number;
+  money: {
+    cost_with_eur: number;
+    cost_without_eur: number;
+    battery_eur: number;
+    stored_eur: number;
+    total_eur: number;
+    charged_kwh: number;
+    charged_avg: number | null;
+    discharged_kwh: number;
+    discharged_avg: number | null;
+    soc_start: number | null;
+    soc_end: number | null;
+    median_price: number | null;
+  };
+}

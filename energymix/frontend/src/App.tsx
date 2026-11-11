@@ -7,6 +7,7 @@ import { COMPONENTS, LEVELS, dayTime, eur, relDay, slotColor, time, timeSec, val
 import { ICONS, Refresh } from "./icons";
 import Settings from "./Settings";
 import Stats from "./Stats";
+import Review from "./Review";
 import Sessions from "./Sessions";
 import Timeline from "./Timeline";
 import { Badge, Card } from "./ui";
@@ -232,6 +233,8 @@ function Overview({ status, live, onStatus }: { status: Status; live: Live; onSt
           )}
         </Card>
       )}
+
+      <Review tz={tz} />
 
       <div>
         <h2 className="mb-2 px-1 text-[13px] font-medium tracking-wide text-slate-400">Wat Energymix nu {status.shadow ? "zou doen" : "doet"}</h2>
