@@ -207,6 +207,122 @@ class Store:
         self.db.execute("DELETE FROM plans WHERE ts < ?", (cutoff,))
         self.db.commit()
 
+    def plan_before(self, t: datetime) -> dict | None:
+        """Het laatst gemaakte plan op of vóór t (anders het eerste erna, als de add-on toen uit stond)."""
+        rows = [(datetime.fromisoformat(r["ts"]), r["ts"]) for r in self.db.execute("SELECT ts FROM plans")]
+        if not rows:
+            return None
+        before = [r for r in rows if r[0] <= t]
+        pick = max(before)[1] if before else min(rows)[1]
+        row = self.db.execute("SELECT plan FROM plans WHERE ts = ?", (pick,)).fetchone()
+        return json.loads(row["plan"]) if row else None
+
+    def day_review(self, tz, day, capacity_kwh: float, eff_d: float = 0.91, energy_tax: float = 0.0,
+                   export_total: bool = True) -> dict:
+        """Plan tegenover werkelijkheid voor één dag (lokale tijd), per kwartier.
+
+        Werkelijk: accu-% en energie uit de metingen per minuut. Plan: het plan dat er bij het begin
+        van de dag lag (00:00). Geld: wat de accu opleverde = wat het net zonder accu gekost had min
+        wat het met accu kostte, plus het verschil in accu-inhoud (begin/eind) tegen de mediaanprijs
+        van die dag na verlies.
+        """
+        start = datetime(day.year, day.month, day.day, tzinfo=tz)
+        end = start + timedelta(days=1)
+        rows = [r for r in self.samples(start) if datetime.fromisoformat(r["ts"]) < end]
+        q = timedelta(minutes=15)
+        buckets: dict[datetime, dict] = {}
+        prev = None
+        cost_with = cost_without = 0.0
+        ch_kwh = dis_kwh = ch_eur = dis_eur = 0.0
+
+        def cost(g_kwh: float, price: float) -> float:
+            sell = price if export_total else price - energy_tax
+            return g_kwh * price if g_kwh > 0 else g_kwh * sell
+
+        for r in rows:
+            t = datetime.fromisoformat(r["ts"]).astimezone(tz)
+            k = start + ((t - start) // q) * q
+            b = buckets.setdefault(k, {"soc": [], "grid": 0.0, "batt": 0.0, "price": r["price"]})
+            if r["soc"] is not None:
+                b["soc"].append(r["soc"])
+            if r["price"] is not None:
+                b["price"] = r["price"]
+            if prev is not None:
+                dt_h = (t - prev).total_seconds() / 3600
+                if 0 < dt_h <= 15 / 60 and r["price"] is not None:
+                    g = (r["grid_w"] or 0) * dt_h / 1000
+                    bt = (r["battery_w"] or 0) * dt_h / 1000  # + = laden
+                    b["grid"] += g
+                    b["batt"] += bt
+                    cost_with += cost(g, r["price"])
+                    cost_without += cost(g - bt, r["price"])
+                    if bt > 0:
+                        ch_kwh += bt
+                        ch_eur += bt * r["price"]
+                    else:
+                        dis_kwh -= bt
+                        dis_eur -= bt * r["price"]
+            prev = t
+        socs = [x for b in buckets.values() for x in b["soc"]]
+        prices = sorted(b["price"] for b in buckets.values() if b["price"] is not None)
+        med = prices[len(prices) // 2] if prices else None
+        soc_start = socs[0] if socs else None
+        soc_end = socs[-1] if socs else None
+        stored_eur = ((soc_end - soc_start) / 100 * capacity_kwh * med * eff_d
+                      if soc_start is not None and soc_end is not None and med is not None else 0.0)
+
+        plan = self.plan_before(start)
+        planned = {}
+        plan_info = None
+        if plan:
+            plan_info = {"created_at": plan.get("created_at"), "saving_eur": (plan.get("summary") or {}).get("saving_eur")}
+            for s in plan.get("slots", []):
+                st = datetime.fromisoformat(s["start"]).astimezone(tz)
+                if start <= st < end:
+                    planned[st] = s
+        slots = []
+        t = start
+        while t < end:
+            b = buckets.get(t)
+            p = planned.get(t)
+            kind = None
+            if p:
+                if (p.get("setpoint_w") or 0) < 0:
+                    kind = "export"
+                elif p.get("ess_state") == 9:
+                    kind = "hold" if p.get("dvcc_current") == 0 else "charge"
+            slots.append({
+                "start": t.isoformat(),
+                "end": (t + q).isoformat(),
+                "price": (b["price"] if b and b["price"] is not None else (p or {}).get("price")),
+                "soc": round(sum(b["soc"]) / len(b["soc"]), 1) if b and b["soc"] else None,
+                "grid_kwh": round(b["grid"], 3) if b else None,
+                "battery_kwh": round(b["batt"], 3) if b else None,
+                "plan_soc": p.get("soc") if p else None,
+                "plan_kind": kind,
+            })
+            t += q
+        return {
+            "day": day.isoformat(),
+            "slots": slots,
+            "plan": plan_info,
+            "measured_minutes": len(rows),
+            "money": {
+                "cost_with_eur": round(cost_with, 2),
+                "cost_without_eur": round(cost_without, 2),
+                "battery_eur": round(cost_without - cost_with, 2),
+                "stored_eur": round(stored_eur, 2),
+                "total_eur": round(cost_without - cost_with + stored_eur, 2),
+                "charged_kwh": round(ch_kwh, 1),
+                "charged_avg": round(ch_eur / ch_kwh, 4) if ch_kwh > 0.05 else None,
+                "discharged_kwh": round(dis_kwh, 1),
+                "discharged_avg": round(dis_eur / dis_kwh, 4) if dis_kwh > 0.05 else None,
+                "soc_start": soc_start,
+                "soc_end": soc_end,
+                "median_price": med,
+            },
+        }
+
     # ------------------------------------------------------------- beslissingen
     def log_decision(self, component: str, value, previous, reason: str, executed: bool) -> None:
         self.db.execute(

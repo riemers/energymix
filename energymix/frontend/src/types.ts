@@ -43,6 +43,26 @@ export interface BatterySession {
   kwh: number;
   soc_end: number | null;
   reason: string;
+  /** Laadblok: waar de geladen stroom heen gaat (eigen verbruik, terugleveren, na de bekende prijzen) */
+  use?: ChargeUse;
+  /** Na de volgende prijsupdate (±13:00): kan nog veranderen */
+  provisional?: boolean;
+}
+
+export interface ChargeUse {
+  start: string;
+  own_kwh: number;
+  own_avg_price: number | null;
+  own_at: string | null;
+  export_kwh: number;
+  export_avg_price: number | null;
+  export_at: string | null;
+  end_kwh: number;
+  end_value: number;
+  end_why: string;
+  cost_eur: number;
+  gain_eur: number;
+  why: string;
 }
 
 export interface CarPlan {
@@ -112,6 +132,9 @@ export interface Summary {
   hold_value_eur?: number;
   hold_windows?: { start: string; end: string }[];
   passthrough?: Passthrough;
+  provisional_from?: string | null;
+  end_value_eur_kwh?: number;
+  end_value_why?: string;
   runway?: { expected?: string | null; early?: string | null; late?: string | null; basis_until?: string };
 }
 
@@ -359,4 +382,37 @@ export interface EntityOption {
   name: string;
   state: string;
   unit: string | null;
+}
+
+export interface ReviewSlot {
+  start: string;
+  end: string;
+  price: number | null;
+  soc: number | null;
+  grid_kwh: number | null;
+  battery_kwh: number | null;
+  plan_soc: number | null;
+  plan_kind: "charge" | "hold" | "export" | null;
+}
+
+export interface Review {
+  day: string;
+  today: string;
+  slots: ReviewSlot[];
+  plan: { created_at: string; saving_eur: number | null } | null;
+  measured_minutes: number;
+  money: {
+    cost_with_eur: number;
+    cost_without_eur: number;
+    battery_eur: number;
+    stored_eur: number;
+    total_eur: number;
+    charged_kwh: number;
+    charged_avg: number | null;
+    discharged_kwh: number;
+    discharged_avg: number | null;
+    soc_start: number | null;
+    soc_end: number | null;
+    median_price: number | null;
+  };
 }

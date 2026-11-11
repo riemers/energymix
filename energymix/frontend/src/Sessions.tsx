@@ -1,5 +1,6 @@
 import { eur, relDay, time } from "./format";
 import { BATT_COLOR, BATT_LABEL, CAR_COLOR } from "./Timeline";
+import { UseDetails } from "./ChargeUse";
 import type { Live, Plan } from "./types";
 
 const KIND: Record<string, string> = {
@@ -113,17 +114,31 @@ export default function Sessions({ plan, tz, live }: { plan: Plan; tz: string; l
 
       <div className="min-w-0">
         <div className="mb-2 text-[13px] font-medium text-slate-300">Accu</div>
+        {plan.summary.provisional_from && plan.battery_sessions.some((b) => b.provisional) && (
+          <div className="mb-2 rounded-lg border border-dashed border-white/10 px-3 py-1.5 text-[11px] text-slate-400">
+            {Date.parse(plan.summary.provisional_from) <= Date.now() + 60_000
+              ? "De prijzen van morgen zijn nog niet binnen: wat hierna staat kan elk moment veranderen."
+              : `Om ${relDay(plan.summary.provisional_from, tz)} komen de prijzen van de volgende dag. Wat daarna gepland staat is voorlopig en kan dan nog veranderen.`}
+          </div>
+        )}
         {plan.battery_sessions.length ? (
           <ul className="space-y-1.5">
-            {plan.battery_sessions.slice(0, 6).map((b) => (
-              <li key={b.start} className="flex items-center gap-3 rounded-lg bg-white/[0.03] px-3 py-2">
-                <span className="h-8 w-1 shrink-0 rounded-full" style={{ background: BATT_COLOR[b.kind] }} />
+            {plan.battery_sessions.slice(0, 8).map((b) => (
+              <li key={b.start} className={`flex items-start gap-3 rounded-lg px-3 py-2 ${b.provisional ? "border border-dashed border-white/10 bg-white/[0.015]" : "bg-white/[0.03]"}`}>
+                <span className="mt-0.5 w-1 shrink-0 self-stretch rounded-full" style={{ background: BATT_COLOR[b.kind], opacity: b.provisional ? 0.5 : 1 }} />
                 <div className="min-w-0 flex-1">
                   <div className="flex flex-wrap items-baseline gap-x-2 text-sm">
                     <span className="font-medium text-slate-100">{span(b.start, b.end, tz)}</span>
                     <span className="rounded px-1.5 text-[11px] font-semibold text-slate-950" style={{ background: BATT_COLOR[b.kind] }}>{BATT_LABEL[b.kind]}</span>
+                    {b.provisional && (
+                      <span className="rounded border border-dashed border-slate-500 px-1.5 text-[10.5px] text-slate-400" title="Na de volgende prijsupdate (±13:00) kan dit nog veranderen">voorlopig</span>
+                    )}
                   </div>
-                  <div className="truncate text-[11px] text-slate-500" title={b.reason}>{b.reason}</div>
+                  {b.use ? (
+                    <div className="mt-1"><UseDetails use={b.use} tz={tz} /></div>
+                  ) : (
+                    <div className="truncate text-[11px] text-slate-500" title={b.reason}>{b.reason}</div>
+                  )}
                 </div>
                 <div className="shrink-0 text-right text-[12px] tabular-nums">
                   {b.kind !== "hold" && <span className="text-slate-400">{b.kwh} kWh</span>}

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import asdict
-from datetime import datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 
 from aiohttp import web
@@ -187,6 +187,20 @@ def create_app(engine: Engine) -> web.Application:
             s["to_target_hours"] = round(need * 1000 / charge_w, 2) if charge_w else None
         return web.json_response(s)
 
+    async def review(req: web.Request) -> web.Response:
+        cfg = engine.cfg
+        today = datetime.now(engine.tz).date()
+        try:
+            day = date.fromisoformat(req.query["day"]) if "day" in req.query else today - timedelta(days=1)
+        except ValueError:
+            return web.json_response({"error": "day moet JJJJ-MM-DD zijn"}, status=400)
+        eff_c = cfg.charge_efficiency if 0 < cfg.charge_efficiency <= 1 else 0.93
+        eff_d = min(1.0, (cfg.roundtrip_efficiency if 0 < cfg.roundtrip_efficiency <= 1 else 0.85) / eff_c)
+        body = engine.store.day_review(engine.tz, day, cfg.battery_capacity_kwh, eff_d, cfg.energy_tax_eur,
+                                       cfg.export_price != "energy")
+        body["today"] = today.isoformat()
+        return web.json_response(body)
+
     async def replan(_req: web.Request) -> web.Response:
         await engine.refresh_prices(force=True)
         await engine.cycle()
@@ -282,6 +296,7 @@ def create_app(engine: Engine) -> web.Application:
     app.router.add_get("/api/live", live)
     app.router.add_get("/api/decisions", decisions)
     app.router.add_get("/api/stats", stats)
+    app.router.add_get("/api/review", review)
     app.router.add_post("/api/replan", replan)
     app.router.add_get("/api/settings", get_settings)
     app.router.add_post("/api/settings", post_settings)
