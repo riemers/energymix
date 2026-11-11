@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.2.52
+- "Accu-inhoud na de bekende prijzen waarderen: zoals de afgelopen week" laadt niet meer vol voor een
+  kleine dip. De weekprijs (mediaan) is een gok over de dagen na morgen, die ook goedkoper kunnen zijn
+  (weekend). Nieuwe instelling "zoveel % onder de weekprijs rekenen" (standaard 10%): alleen als stroom
+  nu duidelijk goedkoper is dan normaal laadt hij vol. Voorbeeld 11 nov: weekprijs €0,46, vannacht
+  €0,35. Eerst 55 kWh tot 99% voor een berekende €2,58 die bijna helemaal uit de weekprijs kwam (met
+  alleen de bekende prijzen €0,04); nu ±13 kWh in de goedkoopste kwartieren van morgen (€0,31)
+- Op 0% werkt het zoals voorheen
+
 ## 0.2.51
 - Auto laden "Nacht" betekent nu altijd deze nacht: vanavond 22:00 tot morgen 07:00, of de lopende
   nacht als het al na middernacht is. Hij schuift niet meer door naar een latere nacht omdat die

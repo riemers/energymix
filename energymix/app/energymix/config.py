@@ -139,6 +139,9 @@ class Config:
     grid_charge_enabled: bool = True
     cheap_fill_price: float = 0.15  # onder deze prijs meteen vol laden als de zon het niet vult (0 = uit)
     battery_end_value: str = "careful"  # careful | week: waarde van accu-inhoud na de bekende prijzen
+    # Bij "week": zoveel procent onder de weekmediaan rekenen, want de prijzen na de bekende uren zijn een
+    # gok (ze kunnen ook verder dalen, bv. in het weekend). Alleen bij een duidelijk goedkope periode vol laden.
+    week_value_margin_pct: float = 10
     hold_enabled: bool = False  # accu bewaren (huis van net, accu sparen voor later)
     season_mode: str = "auto"  # auto | day | night
 
