@@ -620,6 +620,12 @@ def _plan_car(cfg, tz, now, slots, plans, state: State, notes, season: dict | No
                 })
     cp.window_mode = cfg.car_window
     cands = base if cfg.car_window not in ("night", "day") else [sp for sp in base if _part_of_day(sp, tz) == cfg.car_window]
+    night_end = None
+    if cfg.car_window == "night":
+        # "Nacht" betekent deze nacht: vanavond, of de lopende nacht als het al na middernacht is.
+        # Nooit doorschuiven naar een latere, goedkopere nacht.
+        night_end = _upcoming_night_end(now, tz)
+        cands = [sp for sp in cands if sp.start < night_end]
     chosen: dict[datetime, float] = {}  # slot -> minuten laden
     if left > 0.5:
         # Eén aaneengesloten blok (zoals Node-RED): geen losse kwartieren, geen gependel
@@ -643,7 +649,8 @@ def _plan_car(cfg, tz, now, slots, plans, state: State, notes, season: dict | No
                 chosen[sp.start] = mins
                 left -= mins
     if left > 0.5:
-        where = f"vóór {_fmt(deadline, tz, now)}" if deadline else "binnen de bekende prijzen"
+        where = (f"vóór {_fmt(deadline, tz, now)}" if deadline
+                 else f"deze nacht (tot {_fmt(night_end, tz, now)})" if night_end else "binnen de bekende prijzen")
         notes.append(f"Auto: {left:.0f} min laden past niet {where}")
 
     need_txt = (
@@ -662,7 +669,7 @@ def _plan_car(cfg, tz, now, slots, plans, state: State, notes, season: dict | No
         sp.reasons["zappi"] = (
             f"vannacht: vol vóór {_fmt(deadline, tz, now)}, goedkoopste blok voor {need_txt} (€{sp.price:.3f})"
             if deadline
-            else f"goedkoopste blok {WINDOW_TXT.get(cfg.car_window, '')}voor {need_txt} (€{sp.price:.3f})"
+            else f"goedkoopste blok {'deze nacht ' if night_end else WINDOW_TXT.get(cfg.car_window, '')}voor {need_txt} (€{sp.price:.3f})"
         )
         cp.full_at = start_at + timedelta(minutes=mins)
     if not chosen and eco_km > 0.5 and eco_km >= cp.need_km - 0.5:
@@ -681,6 +688,13 @@ CAR_STICKY_EUR = 0.01  # doorladen tenzij een later blok meer dan 1 ct/kWh goedk
 
 
 NIGHT_START, DAY_START = 22, 7  # 's nachts 22-07, overdag 07-19 (19-22 telt als avond)
+
+
+def _upcoming_night_end(now: datetime, tz) -> datetime:
+    """Einde (07:00) van deze nacht: de lopende nacht vóór 07:00, anders de komende nacht."""
+    local = now.astimezone(tz)
+    day = local.date() if local.hour < DAY_START else local.date() + timedelta(days=1)
+    return datetime.combine(day, time(DAY_START), tzinfo=tz)
 
 
 def _part_of_day(sp: SlotPlan, tz) -> str:
