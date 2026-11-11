@@ -95,6 +95,9 @@ onbekend is. Kies je bij "Accu-inhoud na de bekende prijzen waarderen" voor "Zoa
 dan rekent hij met de mediaanprijs van de afgelopen 7 dagen. Na een windige, goedkope periode laadt hij
 dan vol en bewaart het voor als de wind gaat liggen. Dat doet hij pas als de prijzen van morgen bekend
 zijn (na ±13:00): is morgen goedkoper, dan laadt hij vandaag alleen wat nodig is en morgen vol.
+Omdat de prijzen na morgen een gok zijn (ze kunnen ook verder dalen, bijvoorbeeld in het weekend),
+rekent hij standaard 10% onder die weekprijs ("zoveel % onder de weekprijs rekenen"). Een kleine dip
+van een paar cent is dan geen reden om vol te laden; een duidelijk goedkope periode wel.
 
 **Goedkoop meteen vol.** Is de prijs lager dan "Onder deze prijs meteen vol laden" (standaard €0,15)
 en vult de zon de accu de dag erna niet (zonprognose voor morgen min het huisverbruik overdag), dan

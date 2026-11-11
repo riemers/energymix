@@ -61,6 +61,7 @@ EDITABLE = [
     ("victron_multi_va", "Victron Multi's: 48/3000 of 48/5000 (VA per stuk)", "select:3000,5000", "Accu"),
     ("cheap_fill_price", "Onder deze prijs meteen vol laden als de zon het niet vult (€/kWh, bv. 0,15; 0 = uit)", "number", "Strategie"),
     ("battery_end_value", "Accu-inhoud na de bekende prijzen waarderen", "select:careful,week", "Strategie"),
+    ("week_value_margin_pct", "Bij \"zoals de afgelopen week\": zoveel % onder de weekprijs rekenen (onzekerheid, bv. 10)", "number", "Strategie"),
 ]
 
 

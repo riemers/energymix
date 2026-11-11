@@ -560,8 +560,8 @@ def test_without_hold_note_says_what_hold_would_save():
 
 
 def test_week_end_value_fills_battery_after_cheap_windy_spell():
-    # Windig: de komende 36 uur allemaal rond €0,20. Vorige week kostte stroom normaal €0,30.
-    prices = hourly(at(0), [0.21, 0.20, 0.19, 0.19, 0.20, 0.21] * 8)
+    # Windig: de komende 36 uur allemaal rond €0,18. Vorige week kostte stroom normaal €0,30.
+    prices = hourly(at(0), [0.19, 0.18, 0.17, 0.17, 0.18, 0.19] * 8)
     history = hourly(at(0) - timedelta(days=7), [0.30] * 24 * 7) + prices
     base = cfg(house_load_default_w=500, arbitrage_min_spread=0.03)
     careful = make_plan(base, prices, State(soc=15), at(1), history=history)
@@ -570,6 +570,23 @@ def test_week_end_value_fills_battery_after_cheap_windy_spell():
     assert careful.summary["grid_charge_kwh"] < 1
     assert week.summary["grid_charge_kwh"] > 10
     assert "afgelopen week" in week.summary["end_value_why"]
+
+
+def test_week_end_value_does_not_fill_for_a_small_dip():
+    # Vorige week €0,48; vannacht en morgen €0,35-0,45. Na verlies is dat een paar cent per kWh, en
+    # na de bekende prijzen kan het ook verder dalen (weekend): dan niet vol laden op de weekprijs.
+    history = hourly(at(0) - timedelta(days=7), [0.48] * 24 * 7)
+    prices = hourly(at(0), [0.40, 0.38, 0.36, 0.355, 0.355, 0.36, 0.38, 0.42, 0.44, 0.44, 0.42, 0.40]
+                    + [0.38] * 6 + [0.42] * 4 + [0.40, 0.38] + [0.39] * 6)
+    c = cfg(house_load_default_w=900, arbitrage_min_spread=0.03, battery_end_value="week", hold_enabled=True)
+    plan = make_plan(c, prices, State(soc=11), at(0, 5), history=history + prices)
+    assert plan.summary["grid_charge_kwh"] < 10
+    assert "marge" in plan.summary["end_value_why"]
+    # Zonder marge (oud gedrag) zou hij de accu vol laden
+    old = make_plan(cfg(house_load_default_w=900, arbitrage_min_spread=0.03, battery_end_value="week",
+                        hold_enabled=True, week_value_margin_pct=0), prices, State(soc=11), at(0, 5),
+                    history=history + prices)
+    assert old.summary["grid_charge_kwh"] > 20
 
 
 def test_week_end_value_waits_for_tomorrows_prices_and_picks_cheapest_day():

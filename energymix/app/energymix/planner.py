@@ -939,10 +939,16 @@ def _plan_battery(cfg, tz, now, slots, plans: list[SlotPlan], state: State, fc: 
     # Alleen als de prijzen van morgen al bekend zijn (na ±13:00): anders zou hij vóór 13:00 al vol
     # laden terwijl morgen misschien nog goedkoper is. Eerst kiezen tussen vandaag en morgen.
     known_h = (plans[-1].end - now).total_seconds() / 3600 if plans else 0
-    if (cfg.battery_end_value == "week" and past_median is not None and past_median * eff_d > terminal_value
+    # De weekmediaan is een gok over de prijzen na de bekende uren: een marge eraf, zodat hij alleen
+    # vol laadt als het nu duidelijk goedkoper is dan normaal, niet voor een paar cent die in het
+    # weekend zomaar weg kan zijn.
+    margin = min(90.0, max(0.0, cfg.week_value_margin_pct)) / 100
+    week_e = past_median * (1 - margin) if past_median is not None else None
+    if (cfg.battery_end_value == "week" and week_e is not None and week_e * eff_d > terminal_value
             and known_h >= WEEK_VALUE_MIN_HOURS):
-        terminal_value = past_median * eff_d
-        terminal_why = f"mediaan afgelopen week €{past_median:.3f}, na verlies"
+        terminal_value = week_e * eff_d
+        terminal_why = (f"mediaan afgelopen week €{past_median:.3f} min {margin * 100:.0f}% marge, na verlies"
+                        if margin > 0 else f"mediaan afgelopen week €{past_median:.3f}, na verlies")
 
     # Ochtend-eco (door de autoplanning gekozen): accu/zon → auto
     eco = [sp.car_eco_kwh for sp in plans]
