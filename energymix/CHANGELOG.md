@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.2.51
+- Auto laden "Nacht" betekent nu altijd deze nacht: vanavond 22:00 tot morgen 07:00, of de lopende
+  nacht als het al na middernacht is. Hij schuift niet meer door naar een latere nacht omdat die
+  goedkoper is. Binnen deze nacht kiest hij nog wel het goedkoopste blok. Past het laden niet in deze
+  nacht, dan meldt hij dat
+- Wil je dat hij zelf de goedkoopste dag of nacht kiest, kies dan "Goedkoopst"
+
 ## 0.2.50
 - Dashboard "Nu" ververst sneller: de live waarden (zon, net, accu, huis, fases) werden maar eens per
   `regulator_seconds` (standaard 30 s) opnieuw uitgelezen, ook al vroeg het scherm elke 3 s. Nu leest

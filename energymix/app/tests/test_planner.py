@@ -414,7 +414,21 @@ def test_evening_plugin_waits_for_cheaper_day_tomorrow():
     plan = make_plan(cfg(car_window="night"), prices, st, at(20))
     fast = [s.start.astimezone(TZ).hour for s in plan.slots if s.zappi_mode == "Fast"]
     assert all(h >= 22 or h < 7 for h in fast) and len(fast) == 2
-    assert "'s nachts" in next(s for s in plan.slots if s.zappi_mode == "Fast").reasons["zappi"]
+    assert "deze nacht" in next(s for s in plan.slots if s.zappi_mode == "Fast").reasons["zappi"]
+
+
+def test_night_means_this_night_not_a_cheaper_later_night():
+    # 20:00 ingestoken, "Nacht" gekozen. Vannacht 0.21, morgennacht 0.10: toch vannacht laden
+    p = [0.30] * 22 + [0.21] * 9 + [0.30] * 15 + [0.10] * 2
+    prices = hourly(at(0), p)  # 48 uur vanaf 6 okt 00:00
+    st = State(zappi_plug="EV Connected", carcharger_mode="auto", cars=car("270"))  # 2 uur laden
+    plan = make_plan(cfg(car_window="night"), prices, st, at(20))
+    fast = [s.start for s in plan.slots if s.zappi_mode == "Fast"]
+    assert fast and all(at(22) <= t < at(7, day=7) for t in fast)
+    # Na middernacht: de lopende nacht, niet de volgende
+    plan = make_plan(cfg(car_window="night"), prices, st, at(2, day=7))
+    fast = [s.start for s in plan.slots if s.zappi_mode == "Fast"]
+    assert fast and all(at(2, day=7) <= t < at(7, day=7) for t in fast)
 
 
 def test_hold_in_blocks_not_scattered_quarters():
