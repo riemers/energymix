@@ -813,3 +813,51 @@ def test_export_max_w_still_caps_grid_export():
     plan = make_plan(c, prices, State(soc=90, min_soc=5), at(22, 5))
     peak = [s for s in plan.slots if s.price >= 0.85]
     assert peak and all(s.setpoint_w == -5000 for s in peak)
+
+
+# ------------------------------------------------------------------ uitleg per laadblok
+
+
+def test_charge_block_says_where_the_energy_goes():
+    # Goedkoop 02-04u, duur 18-22u, huis 2 kW: het laden is voor eigen verbruik 's avonds
+    prices = hourly(at(0), [0.25, 0.25, 0.05, 0.05, 0.25] + [0.25] * 13 + [0.45] * 4 + [0.25] * 2)
+    plan = make_plan(cfg(house_load_default_w=2000), prices, State(soc=20), at(0, 30))
+    charge = [b for b in plan.battery_sessions if b["kind"] == "charge"]
+    assert charge and charge[0]["use"]["own_kwh"] > 5
+    assert charge[0]["use"]["own_kwh"] > charge[0]["use"]["end_kwh"]
+    assert "eigen verbruik" in charge[0]["use"]["why"]
+
+
+def test_charge_block_for_after_known_prices_is_named():
+    # Weekprijs hoog, bekende prijzen vlak: het laden is (vooral) voor na de bekende prijzen
+    prices = hourly(at(0), [0.19, 0.18, 0.17, 0.17, 0.18, 0.19] * 8)
+    history = hourly(at(0) - timedelta(days=7), [0.30] * 24 * 7) + prices
+    plan = make_plan(cfg(house_load_default_w=500, battery_end_value="week"), prices, State(soc=15), at(1),
+                     history=history)
+    charge = [b for b in plan.battery_sessions if b["kind"] == "charge"]
+    end = sum(b["use"]["end_kwh"] for b in charge)
+    own = sum(b["use"]["own_kwh"] for b in charge)
+    assert end > own and end > 10
+    assert "na de bekende prijzen" in charge[0]["use"]["why"]
+
+
+def test_plan_after_next_price_update_is_provisional():
+    # 23:00, prijzen bekend t/m morgen: vanaf morgen 13:00 is de planning voorlopig
+    prices = hourly(at(0), [0.30] * 48)
+    plan = make_plan(cfg(), prices, State(soc=50), at(23))
+    assert plan.summary["provisional_from"] == at(13, day=7).isoformat()
+    # 10:00, alleen vandaag bekend: vanaf vandaag 13:00
+    plan = make_plan(cfg(), hourly(at(0), [0.30] * 24), State(soc=50), at(10))
+    assert plan.summary["provisional_from"] == at(13).isoformat()
+    # 15:00 en morgen nog niet bekend (te laat): alles kan nu veranderen
+    plan = make_plan(cfg(), hourly(at(0), [0.30] * 24), State(soc=50), at(15))
+    assert plan.summary["provisional_from"] == at(15).isoformat()
+
+
+def test_charge_block_for_export_is_named():
+    prices = hourly(at(0), [0.30] * 2 + [0.20] * 4 + [0.30] * 11 + [0.70] * 4 + [0.30] * 3)
+    plan = make_plan(cfg(house_load_default_w=500, export_enabled=True, export_min_spread=0.15), prices,
+                     State(soc=20), at(0, 30))
+    use = next(b for b in plan.battery_sessions if b["kind"] == "charge")["use"]
+    assert use["export_kwh"] > 5 and use["export_avg_price"] == 0.7
+    assert "terug te leveren" in use["why"]

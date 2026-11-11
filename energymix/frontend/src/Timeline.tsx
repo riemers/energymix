@@ -1,7 +1,8 @@
 import { useLayoutEffect, useMemo, useRef, useState } from "react";
 import { LEVELS, dayTime, eur, slotColor, time } from "./format";
 import { Battery, Car, Plug, Sun } from "./icons";
-import type { Plan, SlotPlan } from "./types";
+import { UseDetails } from "./ChargeUse";
+import type { BatterySession, Plan, SlotPlan } from "./types";
 
 interface Props {
   plan: Plan;
@@ -64,6 +65,11 @@ export default function Timeline({ plan, tz, cheap, fast, target, reserve }: Pro
   const loadsTop = pvTop + THIN_H + 4;
   const totalH = loadsTop + THIN_H + AXIS_H;
   const now = Date.parse(plan.created_at);
+  const provIso = plan.summary.provisional_from;
+  const prov = provIso ? Math.max(t0, Date.parse(provIso)) : null;
+  const provLabel = prov === null ? "" : prov <= now + 60_000
+    ? "voorlopig: prijzen morgen nog niet binnen"
+    : `voorlopig · om ${time(provIso!, tz)} nieuwe prijzen`;
 
   const hoursSpan = (t1 - t0) / 3600_000;
   const every = [1, 2, 3, 6, 12].find((n) => ((width - PAD_L) / hoursSpan) * n >= 46) ?? 12;
@@ -120,6 +126,10 @@ export default function Timeline({ plan, tz, cheap, fast, target, reserve }: Pro
     <div ref={wrap} className="relative w-full select-none">
       <svg width={width} height={totalH} className="block touch-none" onPointerMove={onMove} onPointerLeave={() => setHover(null)}>
         <defs>
+          <pattern id="provhatch" width="8" height="8" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
+            <rect width="8" height="8" fill="#0f172a" opacity="0.4" />
+            <line x1="0" y1="0" x2="0" y2="8" stroke="#94a3b8" strokeWidth="1.5" opacity="0.18" />
+          </pattern>
           <linearGradient id="pvfill" x1="0" y1="0" x2="0" y2="1">
             <stop offset="0" stopColor="#fde047" stopOpacity="0.30" />
             <stop offset="1" stopColor="#fde047" stopOpacity="0.04" />
@@ -149,6 +159,14 @@ export default function Timeline({ plan, tz, cheap, fast, target, reserve }: Pro
           const hgt = Math.max(1.5, Math.abs(y(s.price) - y(0)));
           return <rect key={s.start} x={xs} y={top} width={w} height={hgt} rx={Math.min(2.5, w / 3)} fill={slotColor(s.price, s.level, cheap, fast)} opacity={hover === null || hover === i ? 0.85 : 0.35} />;
         })}
+
+        {/* Voorlopig: na de volgende prijsupdate kan de planning nog veranderen */}
+        {prov !== null && prov < t1 && (
+          <g>
+            <rect x={x(prov)} y={0} width={x(t1) - x(prov)} height={totalH - AXIS_H} fill="url(#provhatch)" />
+            <line x1={x(prov)} x2={x(prov)} y1={0} y2={totalH - AXIS_H} stroke="#94a3b8" strokeDasharray="3 3" opacity={0.7} />
+          </g>
+        )}
 
         {/* Zon over de prijsbalken heen: lichte vulling + duidelijke rand, met de piek erbij */}
         {pvArea && <path d={pvArea} fill="url(#pvfill)" style={{ mixBlendMode: "screen" }} />}
@@ -200,8 +218,10 @@ export default function Timeline({ plan, tz, cheap, fast, target, reserve }: Pro
           const label = w > full.length * 5.6 + 12 ? full : w > BATT_LABEL[b.kind].length * 5.8 + 12 ? BATT_LABEL[b.kind] : "";
           return (
             <g key={b.start}>
-              <rect x={xs} y={battTop} width={w} height={PILL_H} rx={6} fill={BATT_COLOR[b.kind]} opacity={0.92} />
-              {label && <text x={xs + 7} y={battTop + 13.5} className="fill-slate-950 text-[10.5px] font-semibold">{label}</text>}
+              <rect x={xs} y={battTop} width={w} height={PILL_H} rx={6} fill={BATT_COLOR[b.kind]} opacity={b.provisional ? 0.55 : 0.92}
+                stroke={b.provisional ? "#e2e8f0" : undefined} strokeDasharray={b.provisional ? "3 2" : undefined} strokeOpacity={0.6} />
+              {b.use && <UseStrip use={b.use} x={xs} y={battTop + PILL_H - 4} w={w} />}
+              {label && <text x={xs + 7} y={battTop + 12.5} className="fill-slate-950 text-[10.5px] font-semibold">{label}</text>}
             </g>
           );
         })}
@@ -225,6 +245,21 @@ export default function Timeline({ plan, tz, cheap, fast, target, reserve }: Pro
           </g>
         ))}
 
+        {prov !== null && prov < t1 && (
+          <g>
+            {(() => {
+              const lw = provLabel.length * 5.3 + 14;
+              const lx = Math.min(x(prov) + 6, width - PAD_R - lw);
+              return (
+                <g>
+                  <rect x={lx} y={18} width={lw} height={15} rx={7.5} fill="#0f172a" stroke="#94a3b8" strokeOpacity={0.5} strokeDasharray="3 2" />
+                  <text x={lx + 7} y={28.5} className="fill-slate-300 text-[10px]">{provLabel}</text>
+                </g>
+              );
+            })()}
+          </g>
+        )}
+
         {now >= t0 && now <= t1 && (
           <g>
             <line x1={x(now)} x2={x(now)} y1={0} y2={totalH - AXIS_H} stroke="#fff" strokeWidth={1.5} opacity={0.75} />
@@ -236,14 +271,43 @@ export default function Timeline({ plan, tz, cheap, fast, target, reserve }: Pro
         {h && <rect x={x(Date.parse(h.start))} y={0} width={x(Date.parse(h.end)) - x(Date.parse(h.start))} height={totalH - AXIS_H} fill="#fff" opacity={0.06} />}
       </svg>
 
-      {h && <Tooltip slot={h} tz={tz} left={x(Date.parse(h.start))} width={width} />}
+      {h && (
+        <Tooltip slot={h} tz={tz} left={x(Date.parse(h.start))} width={width}
+          session={plan.battery_sessions.find((b) => Date.parse(b.start) <= Date.parse(h.start) && Date.parse(h.start) < Date.parse(b.end))}
+          provisional={prov !== null && Date.parse(h.end) > prov} provIso={provIso ?? null} />
+      )}
       <Legend />
     </div>
   );
 }
 
-function Tooltip({ slot, tz, left, width }: { slot: SlotPlan; tz: string; left: number; width: number }) {
-  const w = Math.min(290, width - 16);
+// Onderin een laadblok: waar de stroom heen gaat (groen eigen verbruik, geel terug, grijs voor later)
+function UseStrip({ use, x, y, w }: { use: NonNullable<BatterySession["use"]>; x: number; y: number; w: number }) {
+  const total = use.own_kwh + use.export_kwh + use.end_kwh;
+  if (total < 0.1 || w < 8) return null;
+  const parts: [number, string][] = [
+    [use.own_kwh, "#047857"],
+    [use.export_kwh, "#b45309"],
+    [use.end_kwh, "#475569"],
+  ];
+  let cx = x + 3;
+  const inner = w - 6;
+  return (
+    <g>
+      {parts.map(([v, c], i) => {
+        const pw = (v / total) * inner;
+        const r = <rect key={i} x={cx} y={y} width={Math.max(0, pw)} height={2.5} fill={c} />;
+        cx += pw;
+        return v > 0.05 ? r : null;
+      })}
+    </g>
+  );
+}
+
+function Tooltip({ slot, tz, left, width, session, provisional, provIso }: {
+  slot: SlotPlan; tz: string; left: number; width: number; session?: BatterySession; provisional: boolean; provIso: string | null;
+}) {
+  const w = Math.min(session?.use ? 320 : 290, width - 16);
   const l = Math.max(8, Math.min(left - w / 2, width - w - 8));
   const chips: [string, string][] = [];
   if ((slot.setpoint_w ?? 0) < 0) chips.push([BATT_COLOR.export, `Accu terug ${(Math.abs(slot.setpoint_w!) / 1000).toFixed(1)} kW`]);
@@ -290,7 +354,21 @@ function Tooltip({ slot, tz, left, width }: { slot: SlotPlan; tz: string; left: 
           ))}
         </div>
       )}
-      {main && <p className="mt-2 line-clamp-2 text-[11px] leading-snug text-slate-400">{main}</p>}
+      {session?.use ? (
+        <div className="mt-2 border-t border-white/5 pt-2">
+          <div className="mb-1 text-[11px] text-slate-300">
+            Waarom laden {time(session.start, tz)}–{time(session.end, tz)} ({session.kwh.toString().replace(".", ",")} kWh)?
+          </div>
+          <UseDetails use={session.use} tz={tz} />
+        </div>
+      ) : (
+        main && <p className="mt-2 line-clamp-2 text-[11px] leading-snug text-slate-400">{main}</p>
+      )}
+      {provisional && provIso && (
+        <p className="mt-2 rounded-md border border-dashed border-white/15 px-2 py-1 text-[11px] text-slate-400">
+          Voorlopig: {Date.parse(provIso) <= Date.now() + 60_000 ? "de prijzen van morgen zijn er nog niet" : `om ${time(provIso, tz)} komen de prijzen van de volgende dag`}, dan kan dit nog veranderen.
+        </p>
+      )}
     </div>
   );
 }
@@ -309,11 +387,23 @@ function Legend() {
     [BATT_COLOR.export, "terugleveren", "box"],
     ["#38bdf8", "alle loads", "box"],
   ];
+  const use: [string, string][] = [
+    ["#34d399", "geladen voor eigen verbruik"],
+    ["#fbbf24", "geladen om terug te leveren"],
+    ["repeating-linear-gradient(135deg,#94a3b8 0 2px,transparent 2px 4px)", "geladen voor na de bekende prijzen"],
+    ["repeating-linear-gradient(45deg,#94a3b8 0 1px,transparent 1px 4px)", "voorlopig (nieuwe prijzen om ±13:00)"],
+  ];
   return (
     <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-slate-400">
       {items.map(([c, l, kind]) => (
         <span key={l} className="flex items-center gap-1.5">
           <span className={kind === "line" ? "h-0.5 w-3 rounded" : "h-2.5 w-2.5 rounded-sm"} style={{ background: c }} />
+          {l}
+        </span>
+      ))}
+      {use.map(([c, l]) => (
+        <span key={l} className="flex items-center gap-1.5">
+          <span className="h-2.5 w-2.5 rounded-sm ring-1 ring-white/10" style={{ background: c }} />
           {l}
         </span>
       ))}

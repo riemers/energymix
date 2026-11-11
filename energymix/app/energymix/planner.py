@@ -387,7 +387,53 @@ def make_plan(
         else (car.speed_kmh or cfg.charge_speed_km_per_hour)
     )
     car.sessions = _car_sessions(plans, car, state, speed_eff, cfg.zappi_max_w / 1000)
-    return Plan(now, plans, car, season, summary, [_nl(n) for n in notes], _battery_sessions(plans))
+    sessions = _battery_sessions(plans)
+    uses = {u["start"]: u for u in summary.get("charge_uses", [])}
+    pub = next_price_update(tz, now, [s for s in prices if s.end > now])
+    for b in sessions:
+        if b["kind"] == "charge" and b["start"] in uses:
+            u = b["use"] = uses[b["start"]]
+            u["why"] = _nl(charge_use_text(u, tz, now))
+            # De algemene reden ("bespaart om 09:00") noemt maar één kwartier; zeg per kwartier waar
+            # de stroom van dit blok echt heen gaat. Eigen regels (marge, vol bij goedkoop) blijven staan.
+            for sp in plans:
+                if b["start"] <= sp.start.isoformat() < b["end"] and ": +€" in sp.reasons.get("ess", ""):
+                    sp.reasons["ess"] = _nl(f"laden à €{sp.price:.3f}: ") + u["why"]
+        b["provisional"] = pub is not None and datetime.fromisoformat(b["end"]) > pub
+    summary["provisional_from"] = pub.isoformat() if pub else None
+    return Plan(now, plans, car, season, summary, [_nl(n) for n in notes], sessions)
+
+
+def charge_use_text(u: dict, tz, now: datetime) -> str:
+    """Waar de stroom van een laadblok heen gaat, in gewone woorden."""
+    def k(x: float) -> str:
+        return f"{x:.1f}".replace(".", ",")
+    parts = []
+    if u["own_kwh"] >= 0.1:
+        parts.append(f"{k(u['own_kwh'])} kWh bespaart op eigen verbruik"
+                     + (f" (vooral om {_fmt(datetime.fromisoformat(u['own_at']), tz, now)}, gem. €{u['own_avg_price']:.3f})"
+                        if u["own_at"] else ""))
+    if u["export_kwh"] >= 0.1:
+        parts.append(f"{k(u['export_kwh'])} kWh om terug te leveren"
+                     + (f" (vooral om {_fmt(datetime.fromisoformat(u['export_at']), tz, now)}, gem. €{u['export_avg_price']:.3f})"
+                        if u["export_at"] else ""))
+    if u["end_kwh"] >= 0.1:
+        parts.append(f"{k(u['end_kwh'])} kWh blijft in de accu voor na de bekende prijzen "
+                     f"(gerekend à €{u['end_value']:.3f}: {u['end_why']})")
+    return "; ".join(parts) if parts else "weinig effect"
+
+
+def next_price_update(tz, now: datetime, slots) -> datetime | None:
+    """Vanaf wanneer is de planning voorlopig? De prijzen voor de dag na de laatst bekende dag komen
+    rond 13:00 op die laatste dag. Wat daarna gepland staat kan dan nog veranderen. Zijn ze al te laat
+    (na 13:00 nog niet binnen), dan kan alles vanaf nu veranderen."""
+    if not slots:
+        return None
+    last_day = (slots[-1].end - timedelta(minutes=1)).astimezone(tz).date()
+    pub = datetime(last_day.year, last_day.month, last_day.day, PRICE_PUBLISH_HOUR, tzinfo=tz)
+    if pub >= slots[-1].end:
+        return None
+    return max(pub, now)
 
 
 ECO_KW = 3.7  # geschat laadvermogen op Eco (zon/accu)
@@ -397,6 +443,7 @@ HOLD_STICKY_EUR = 0.03
 PASSTHROUGH_MIN_EUR = 0.02  # bewaren (huis van het net, accu sparen) loont al vanaf 2 cent per kWh
 CHARGE_STEP_KWH = 1.0
 WEAK_SUN_MONTHS = (10, 11, 12, 1, 2)
+PRICE_PUBLISH_HOUR = 13  # rond deze tijd komen de prijzen van morgen
 WEEK_VALUE_MIN_HOURS = 18  # "zoals de afgelopen week" pas als de prijzen van morgen bekend zijn  # laden van het net per portie afwegen  # liever een bewaar-blok verlengen dan een los blok erbij
 
 
@@ -1583,9 +1630,59 @@ def _plan_battery(cfg, tz, now, slots, plans: list[SlotPlan], state: State, fc: 
             sp.setpoint_w = int(cfg.grid_setpoint_default_w)
             sp.reasons["setpoint"] = "normaal (geen terugleveren)"
 
+    # Waar gaat de geladen stroom heen? Per laadblok: haal het laden weg en kijk wat er verandert.
+    # Meer van het net in een later (duurder) kwartier = eigen verbruik; minder terugleveren =
+    # terugleveren; minder in de accu aan het eind = bewaard voor na de bekende prijzen.
+    charge_uses: list[dict] = []
+    blocks: list[list[int]] = []
+    for i in range(n):
+        if min(gc[i], cur.imp[i]) > EPS:
+            if blocks and blocks[-1][-1] == i - 1:
+                blocks[-1].append(i)
+            else:
+                blocks.append([i])
+    for blk in blocks:
+        keep = [gc[k] for k in blk]
+        for k in blk:
+            gc[k] = 0.0
+        alt_c = simulate()
+        for k, g in zip(blk, keep):
+            gc[k] = g
+        others = [k for k in range(n) if k not in blk]
+        bought = sum(min(gc[k], cur.imp[k]) for k in blk)
+        avg_buy = sum(min(gc[k], cur.imp[k]) * plans[k].price for k in blk) / bought if bought > EPS else 0.0
+        more = {k: alt_c.imp[k] - cur.imp[k] for k in others if alt_c.imp[k] - cur.imp[k] > 0.01}
+        # Eigen verbruik telt alleen waar het later duurder is; elders (bv. het laatste kwartier, als
+        # de accu net leeg zou raken) is het gewoon energie die hij voor later in de accu heeft.
+        own = {k: v for k, v in more.items() if plans[k].price > avg_buy}
+        own_kwh = sum(own.values())
+        later_kwh = sum(v for k, v in more.items() if k not in own)
+        # Alleen bewust terugleveren; zonnestroom die overloopt omdat de accu vol is telt niet
+        sold = {k: cur.exp[k] - alt_c.exp[k] for k in others if ex[k] > EPS and cur.exp[k] - alt_c.exp[k] > 0.01}
+        export_kwh = sum(sold.values())
+        end_kwh = max(0.0, (cur.terminal_e - alt_c.terminal_e) * eff_d) + later_kwh
+        top_own = max(own, key=lambda k: own[k] * plans[k].price) if own else None
+        top_sold = max(sold, key=lambda k: sold[k] * plans[k].sell_price) if sold else None
+        charge_uses.append({
+            "start": plans[blk[0]].start.isoformat(),
+            "own_kwh": round(own_kwh, 1),
+            "own_avg_price": round(sum(v * plans[k].price for k, v in own.items()) / own_kwh, 4) if own_kwh > EPS else None,
+            "own_at": plans[top_own].start.isoformat() if top_own is not None else None,
+            "export_kwh": round(export_kwh, 1),
+            "export_avg_price": (round(sum(v * plans[k].sell_price for k, v in sold.items()) / export_kwh, 4)
+                                 if export_kwh > EPS else None),
+            "export_at": plans[top_sold].start.isoformat() if top_sold is not None else None,
+            "end_kwh": round(end_kwh, 1),
+            "end_value": round(terminal_value, 4),
+            "end_why": terminal_why,
+            "cost_eur": round(sum(min(gc[k], cur.imp[k]) * plans[k].price for k in blk), 2),
+            "gain_eur": round(total(alt_c) - cur_total, 2),
+        })
+
     if state.soc is not None and cap:
         lowest = min(range(n), key=lambda k: cur.soc_e[k]) if n else None
         summary = {
+            "charge_uses": charge_uses,
             "cost_eur": round(cur_total + cur.terminal_e * terminal_value, 2),
             "baseline_cost_eur": round(base_total + base.terminal_e * terminal_value, 2),
             "saving_eur": round(base_total - cur_total, 2),

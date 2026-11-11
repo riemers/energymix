@@ -43,6 +43,26 @@ export interface BatterySession {
   kwh: number;
   soc_end: number | null;
   reason: string;
+  /** Laadblok: waar de geladen stroom heen gaat (eigen verbruik, terugleveren, na de bekende prijzen) */
+  use?: ChargeUse;
+  /** Na de volgende prijsupdate (±13:00): kan nog veranderen */
+  provisional?: boolean;
+}
+
+export interface ChargeUse {
+  start: string;
+  own_kwh: number;
+  own_avg_price: number | null;
+  own_at: string | null;
+  export_kwh: number;
+  export_avg_price: number | null;
+  export_at: string | null;
+  end_kwh: number;
+  end_value: number;
+  end_why: string;
+  cost_eur: number;
+  gain_eur: number;
+  why: string;
 }
 
 export interface CarPlan {
@@ -112,6 +132,9 @@ export interface Summary {
   hold_value_eur?: number;
   hold_windows?: { start: string; end: string }[];
   passthrough?: Passthrough;
+  provisional_from?: string | null;
+  end_value_eur_kwh?: number;
+  end_value_why?: string;
   runway?: { expected?: string | null; early?: string | null; late?: string | null; basis_until?: string };
 }
 
