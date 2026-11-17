@@ -34,7 +34,7 @@ SAMPLE_SECONDS = 60
 # dus de toestand vaker opnieuw opbouwen dan de regelaar (die blijft op regulator_seconds)
 LIVE_SECONDS = 2
 PUBLISH_PREFIX = "energymix"
-PRICE_RETRY_AFTER_13 = 300  # s tussen pogingen zolang de prijzen van morgen ontbreken
+PRICE_RETRY_AFTER_13 = 60  # s tussen pogingen zolang de prijzen van morgen ontbreken
 
 
 class Engine:
@@ -258,8 +258,8 @@ class Engine:
     def _price_retry_seconds(self, now: datetime | None = None) -> float | None:
         """Seconden tot de volgende poging om ontbrekende prijzen op te halen, None als er niets ontbreekt.
 
-        Morgen komt rond 13:00 binnen. Ervoor is elk uur proberen genoeg, vanaf 13:00 elke 5 minuten:
-        anders kan het tot 14:00 duren voordat het plan de nieuwe prijzen ziet.
+        Morgen komt na 13:00 binnen (bij Tibber meestal tussen 13:30 en 13:45). Ervoor is elk uur proberen
+        genoeg, vanaf 13:00 elke minuut: dan ziet het plan de nieuwe prijzen hooguit een minuut na de Tibber-app.
         """
         now = now or datetime.now(timezone.utc)
         if not self.prices:

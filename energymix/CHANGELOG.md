@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.2.54
+- Prijzen van morgen sneller binnen: na 13:00 vraagt hij Tibber elke minuut (was elke 5 minuten) tot
+  de nieuwe dag er is. Tibber zet ze meestal tussen 13:30 en 13:45 klaar; het plan loopt nu hooguit
+  een minuut achter op de Tibber-app
+
 ## 0.2.53
 - Planning: alles na de volgende prijsupdate (±13:00, als de prijzen van de dag erna komen) is
   gearceerd en heet "voorlopig". Accu-blokken daarna staan gestippeld met een label "voorlopig": dat kan

@@ -15,13 +15,13 @@ def engine(tmp_path, until):
     return e
 
 
-def test_after_13_retries_every_5_minutes_instead_of_hourly(tmp_path):
+def test_after_13_retries_every_minute_instead_of_hourly(tmp_path):
     # 27 okt, wintertijd (UTC+1): prijzen tot middernacht, morgen nog niet binnen
     midnight = datetime(2026, 10, 27, 23, 0, tzinfo=UTC)
     e = engine(tmp_path, midnight)
     e.prices_fetched = datetime(2026, 10, 27, 12, 2, tzinfo=UTC).timestamp()  # 13:02 lokaal, nog niets
-    assert e._price_retry_seconds(datetime(2026, 10, 27, 12, 5, tzinfo=UTC)) == 120
-    assert e._price_retry_seconds(datetime(2026, 10, 27, 12, 10, tzinfo=UTC)) == 0
+    assert e._price_retry_seconds(datetime(2026, 10, 27, 12, 2, 20, tzinfo=UTC)) == 40
+    assert e._price_retry_seconds(datetime(2026, 10, 27, 12, 3, tzinfo=UTC)) == 0
 
 
 def test_before_13_hourly_and_none_when_tomorrow_known(tmp_path):
