@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.2.54
+- Prijzen van morgen eerder: de Tibber-app toont ze rond 13:05, maar de Tibber-API geeft ze pas rond
+  13:30 à 13:45. Heb je de EnergyZero-integratie in Home Assistant, dan plant hij na 13:00 alvast met
+  die beursprijzen plus de opslag die Tibber erbovenop zet (geleerd uit de uren van vandaag, als die
+  stabiel is). In de grafiek heten die uren "voorlopig". Zodra Tibber de echte prijzen heeft, worden ze
+  vervangen. Uitzetten met de optie `early_prices: false`
+- Tibber vraagt hij na 13:00 elke minuut (was elke 5 minuten) tot de nieuwe dag er is
+
 ## 0.2.53
 - Planning: alles na de volgende prijsupdate (±13:00, als de prijzen van de dag erna komen) is
   gearceerd en heet "voorlopig". Accu-blokken daarna staan gestippeld met een label "voorlopig": dat kan
