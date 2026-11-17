@@ -25,6 +25,7 @@ from .regulator import ExportRegulator, Regulator
 from .store import Store
 from .story import tell
 from .tibber import fetch_prices
+from . import energyzero
 from .victron import Victron
 
 log = logging.getLogger(__name__)
@@ -54,6 +55,8 @@ class Engine:
         self.car_entities: dict[str, dict[str, str]] = {}
         self.prices: list[PriceSlot] = []
         self.prices_fetched = 0.0
+        self.provisional_since: datetime | None = None  # sinds wanneer morgen voorlopig van EnergyZero komt
+        self._ez_entry: str | None = None
         self.plan: Plan | None = None
         self.state: State | None = None
         self.story: list[str] = []
@@ -262,9 +265,10 @@ class Engine:
         genoeg, vanaf 13:00 elke minuut: dan ziet het plan de nieuwe prijzen hooguit een minuut na de Tibber-app.
         """
         now = now or datetime.now(timezone.utc)
-        if not self.prices:
+        real = [p for p in self.prices if p.level != energyzero.PROVISIONAL]
+        if not real:
             return max(0.0, self.prices_fetched + 60 - now.timestamp())
-        if self.prices[-1].end > now + timedelta(hours=12):
+        if real[-1].end > now + timedelta(hours=12):
             return None
         wait = PRICE_RETRY_AFTER_13 if now.astimezone(self.tz).hour >= 13 else 3600
         return max(0.0, self.prices_fetched + wait - now.timestamp())
@@ -276,8 +280,51 @@ class Engine:
         if not self.cfg.tibber_token:
             raise RuntimeError("Geen Tibber-token ingesteld")
         self.prices_fetched = time.time()  # laatste poging, ook als die mislukt: niet elke 5 s opnieuw
-        self.prices = await fetch_prices(self.session, self.cfg.tibber_token, self.cfg.price_resolution)
-        self.store.save_prices(self.prices)
+        tibber = await fetch_prices(self.session, self.cfg.tibber_token, self.cfg.price_resolution)
+        self.store.save_prices(tibber)
+        self.prices = tibber
+        if self._price_retry_seconds() is None:
+            if self.provisional_since:
+                log.info("Tibber heeft de prijzen van morgen; voorlopige EnergyZero-prijzen vervangen")
+            self.provisional_since = None
+            return
+        if self.cfg.early_prices and datetime.now(self.tz).hour >= 13:
+            try:
+                extra = await self._energyzero_tomorrow(tibber)
+            except Exception as e:  # noqa: BLE001
+                log.warning("EnergyZero: %s", e)
+                extra = []
+            if extra:
+                if not self.provisional_since:
+                    self.provisional_since = datetime.now(timezone.utc)
+                    log.info("Morgen voorlopig van EnergyZero (%d uur) tot Tibber ze heeft", len(extra))
+                self.prices = [*tibber, *extra]
+
+    async def _energyzero_tomorrow(self, tibber: list[PriceSlot]) -> list[PriceSlot]:
+        """Prijzen van morgen via de EnergyZero-integratie in HA, als die er is."""
+        if not self.ha.connected.is_set():
+            return []
+        if self._ez_entry is None:
+            entries = await self.ha.command({"type": "config_entries/get", "domain": "energyzero"}) or []
+            loaded = [e for e in entries if e.get("state") == "loaded"]
+            if not loaded:
+                self._ez_entry = ""
+                log.info("Geen EnergyZero-integratie in HA: wachten op Tibber")
+            else:
+                self._ez_entry = loaded[0]["entry_id"]
+        if not self._ez_entry:
+            return []
+        today = datetime.now(self.tz).replace(hour=0, minute=0, second=0, microsecond=0)
+        resp = await self.ha.command({
+            "type": "call_service", "domain": "energyzero", "service": "get_energy_prices",
+            "service_data": {
+                "config_entry": self._ez_entry, "incl_vat": True,
+                "start": today.strftime("%Y-%m-%d %H:%M:%S"),
+                "end": (today + timedelta(days=2)).strftime("%Y-%m-%d %H:%M:%S"),
+            },
+            "return_response": True,
+        })
+        return energyzero.provisional_slots(tibber, energyzero.parse_response(resp))
 
     # ------------------------------------------------------------ helpers
     async def _helpers(self) -> None:
@@ -343,6 +390,9 @@ class Engine:
         history = list({p.start: p for p in [*self.store.price_history(8), *self.prices]}.values())
         self.plan = make_plan(self.cfg, self.prices, self.state, now, self.forecast(now), history)
         self.story = tell(self.plan, self.state, self.tz)
+        if self.provisional_since and any(p.level == energyzero.PROVISIONAL for p in self.prices):
+            self.story.append("De prijzen van morgen zijn nog voorlopig: beursprijs van EnergyZero plus de opslag van "
+                              "Tibber. Zodra Tibber ze heeft, worden ze vervangen.")
         self.store.save_plan(self.plan.to_dict(), asdict(self.state))
         if self.plan.now and self.ha.connected.is_set():
             dvcc = self.regulator.step(self.plan.now, self.state)

@@ -51,6 +51,7 @@ options:
 schema:
   tibber_token: password
   price_resolution: list(HOURLY|QUARTER_HOURLY)
+  early_prices: bool?
   timezone: str
   ha_url: url?
   ha_token: password?
