@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.2.54
+- Geen "Error: api/status: 401" meer als je na een tijdje terugkomt op het dashboard. De ingress-sessie
+  van Home Assistant is dan verlopen en wordt binnen een paar seconden vernieuwd; het dashboard probeert
+  het bij een 401 nu stil opnieuw (tot ±20 s) en toont pas een fout als het daarna nog steeds mislukt.
+  De live-waarden stapelen tijdens dat wachten ook geen verzoeken meer op
+
 ## 0.2.53
 - Planning: alles na de volgende prijsupdate (±13:00, als de prijzen van de dag erna komen) is
   gearceerd en heet "voorlopig". Accu-blokken daarna staan gestippeld met een label "voorlopig": dat kan

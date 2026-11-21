@@ -65,7 +65,16 @@ export default function App() {
 
   // Live stroom: elke 2 s, niet als het tabblad op de achtergrond staat
   useEffect(() => {
-    const tick = () => !document.hidden && getLive().then(setLive).catch(() => undefined);
+    // Niet opstapelen: een verzoek kan na terugkomen even wachten op een nieuwe ingress-sessie
+    let busy = false;
+    const tick = () => {
+      if (document.hidden || busy) return;
+      busy = true;
+      getLive()
+        .then(setLive)
+        .catch(() => undefined)
+        .finally(() => (busy = false));
+    };
     const t = setInterval(tick, 2000);
     document.addEventListener("visibilitychange", tick);
     return () => {
