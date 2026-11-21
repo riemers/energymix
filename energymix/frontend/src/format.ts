@@ -67,10 +67,11 @@ export const LEVELS: Record<string, { label: string; color: string }> = {
   NORMAL: { label: "normaal", color: "#64748b" },
   EXPENSIVE: { label: "duur", color: "#fb923c" },
   VERY_EXPENSIVE: { label: "zeer duur", color: "#ef4444" },
+  VOORLOPIG: { label: "voorlopig", color: "#94a3b8" },
 };
 
 export function slotColor(price: number, level: string | null | undefined, cheap: number, fast: number): string {
   if (price < 0) return "var(--color-neg)";
-  const l = level ? LEVELS[level] : undefined;
+  const l = level && level !== "VOORLOPIG" ? LEVELS[level] : undefined;
   return l ? l.color : priceColor(price, cheap, fast);
 }

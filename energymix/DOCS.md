@@ -3,6 +3,13 @@
 Energymix plant elk kwartier wat je thuisaccu, zonnepanelen en Zappi moeten doen op basis van de
 Tibber-prijzen, je zonprognose en je verbruik. Bij elke beslissing laat hij zien **waarom**.
 
+## Prijzen van morgen
+
+De Tibber-API geeft de prijzen van morgen vaak pas tussen 13:30 en 13:45, terwijl de beurs ze rond
+13:00 bekend maakt. Staat de EnergyZero-integratie in Home Assistant, dan gebruikt Energymix na 13:00
+alvast die beursprijzen plus de vaste opslag van Tibber (geleerd uit vandaag). Die uren heten
+"voorlopig" tot Tibber de echte prijzen heeft. Zet `early_prices: false` om alleen op Tibber te wachten.
+
 ## Meekijken of aansturen
 
 Energymix stuurt pas iets aan als twee dingen allebei aan staan:

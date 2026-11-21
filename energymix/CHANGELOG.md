@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.2.55
+- Prijzen van morgen eerder: de Tibber-app toont ze rond 13:05, maar de Tibber-API geeft ze pas rond
+  13:30 à 13:45. Heb je de EnergyZero-integratie in Home Assistant, dan plant hij na 13:00 alvast met
+  die beursprijzen plus de opslag die Tibber erbovenop zet (geleerd uit de uren van vandaag, als die
+  stabiel is). In de grafiek heten die uren "voorlopig". Zodra Tibber de echte prijzen heeft, worden ze
+  vervangen. Uitzetten met de optie `early_prices: false`
+- Tibber vraagt hij na 13:00 elke minuut (was elke 5 minuten) tot de nieuwe dag er is
+
 ## 0.2.54
 - Geen "Error: api/status: 401" meer als je na een tijdje terugkomt op het dashboard. De ingress-sessie
   van Home Assistant is dan verlopen en wordt binnen een paar seconden vernieuwd; het dashboard probeert

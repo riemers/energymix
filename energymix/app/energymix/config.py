@@ -58,6 +58,7 @@ class Config:
     # Verbindingen
     tibber_token: str = ""
     price_resolution: str = "HOURLY"  # HOURLY of QUARTER_HOURLY
+    early_prices: bool = True  # na 13:00 voorlopig EnergyZero-prijzen gebruiken tot Tibber ze heeft
     ha_url: str = ""  # leeg = via Supervisor
     ha_token: str = ""  # leeg = SUPERVISOR_TOKEN
     mqtt_host: str = ""
