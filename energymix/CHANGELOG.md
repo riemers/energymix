@@ -1,6 +1,6 @@
 # Changelog
 
-## Nog niet uitgebracht
+## 0.2.54
 - Geen "Error: api/status: 401" meer als je na een tijdje terugkomt op het dashboard. De ingress-sessie
   van Home Assistant is dan verlopen en wordt binnen een paar seconden vernieuwd; het dashboard probeert
   het bij een 401 nu stil opnieuw (tot ±20 s) en toont pas een fout als het daarna nog steeds mislukt.
